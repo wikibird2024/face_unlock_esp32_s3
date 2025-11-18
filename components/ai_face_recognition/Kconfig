@@ -1,0 +1,3 @@
+config AI_FACE_RECOGNITION_ENABLED
+    bool "ai_face_recognition enabled"
+    default y

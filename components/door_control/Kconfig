@@ -1,0 +1,3 @@
+config DOOR_CONTROL_ENABLED
+    bool "door_control enabled"
+    default y

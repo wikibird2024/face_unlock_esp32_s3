@@ -1,0 +1,19 @@
+# Build artifacts
+build/
+*.bin
+*.elf
+*.map
+
+# IDF config
+sdkconfig
+sdkconfig.old
+
+# Python env / tools
+.venv/
+.env/
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*~

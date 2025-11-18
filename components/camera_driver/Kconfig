@@ -1,0 +1,3 @@
+config CAMERA_DRIVER_ENABLED
+    bool "camera_driver enabled"
+    default y

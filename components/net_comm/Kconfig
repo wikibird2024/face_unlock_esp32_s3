@@ -1,0 +1,3 @@
+config NET_COMM_ENABLED
+    bool "net_comm enabled"
+    default y
