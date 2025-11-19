@@ -1,3 +1,28 @@
+
 config CAMERA_DRIVER_ENABLED
-    bool "camera_driver enabled"
+    bool "Enable Camera Driver"
     default y
+
+config CAMERA_FRAME_SIZE_UXGA
+    bool "UXGA (1600x1200)"
+    default n
+
+config CAMERA_FRAME_SIZE_SXGA
+    bool "SXGA (1280x1024)"
+    default n
+
+config CAMERA_FRAME_SIZE_XGA
+    bool "XGA (1024x768)"
+    default n
+
+config CAMERA_FRAME_SIZE_SVGA
+    bool "SVGA (800x600)"
+    default y
+
+config CAMERA_FRAME_SIZE_VGA
+    bool "VGA (640x480)"
+    default n
+
+config CAMERA_JPEG_QUALITY
+    int "JPEG Quality (10-63, lower is better)"
+    default 10

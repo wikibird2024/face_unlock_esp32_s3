@@ -1,9 +1,0 @@
-version: "1.0.0"
-description: "ESP32-S3 Face Unlock project manifest (camera + esp-dl)"
-
-dependencies:
-  idf: ">=5.0.0"
-
-  espressif/esp32-camera: "*"
-  espressif/esp-dl: "*"
-  espressif/mqtt: "*"

@@ -1,0 +1,18 @@
+dependencies:
+  ## Yêu cầu phiên bản IDF
+  idf:
+    version: ">=5.0.0"
+
+  ## Camera Driver (Quan trọng: Dùng từ Registry để tương thích IDF 5.x)
+  espressif/esp32-camera: "^2.0.4"
+
+  ## Deep Learning Library
+  # Nếu code bạn viết theo API cũ của esp-dl, hãy cẩn thận.
+  # Dưới đây là cách lấy bản mới nhất từ Registry:
+  espressif/esp-dl: "*"
+
+  ## MDNS (Tùy chọn)
+  espressif/mdns: "*"
+
+  ## Button / Keypad (Gợi ý thêm nếu bạn dùng nút bấm)
+  # espressif/button: "*"

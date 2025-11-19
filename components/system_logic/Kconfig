@@ -1,0 +1,9 @@
+menu "System_logic Configuration"
+    help
+      Configuration options for the System_logic component
+
+config SYSTEM_LOGIC_ENABLE
+    bool "Enable System_logic component"
+    default y
+
+endmenu

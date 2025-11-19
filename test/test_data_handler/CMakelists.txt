@@ -1,0 +1,8 @@
+
+# test/test_data_handler/CMakeLists.txt
+
+idf_component_register(
+    SRCS "test_data_handler.c"
+    INCLUDE_DIRS "."
+    REQUIRES data_handler unity
+)

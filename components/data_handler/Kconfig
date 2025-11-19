@@ -1,0 +1,16 @@
+menu "Data Handler Configuration"
+
+config DATA_HANDLER_QUEUE_LENGTH
+    int "Frame Queue Length"
+    default 5
+    help
+      Length of the FreeRTOS queue to buffer camera frames.
+
+config DATA_HANDLER_FRAME_SIZE
+    int "Maximum Frame Size"
+    default 307200
+    help
+      Maximum size of a camera frame in bytes (e.g., 640x480 RGB).
+
+endmenu
+
