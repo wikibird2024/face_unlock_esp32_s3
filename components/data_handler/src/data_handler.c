@@ -3,6 +3,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
 #include "sdkconfig.h" // Includes CONFIG_DATA_HANDLER_QUEUE_LENGTH
+#include <esp_err.h>
 #include <stdlib.h>
 #include <string.h>
 
