@@ -17,3 +17,16 @@ sdkconfig.old
 .idea/
 *.swp
 *~
+
+# ESP-IDF component manager downloads
+managed_components/
+
+# Host unit test build
+build-host/
+
+# Test app build output
+test/target/build/
+test/target/sdkconfig
+test/target/sdkconfig.old
+test/target/managed_components/
+test/target/dependencies.lock

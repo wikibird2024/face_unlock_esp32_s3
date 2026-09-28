@@ -1,0 +1,6 @@
+# Style of the existing C code (LLVM, 2-space indent, 80 columns).
+BasedOnStyle: LLVM
+IndentWidth: 2
+ColumnLimit: 80
+SortIncludes: false
+ReflowComments: false

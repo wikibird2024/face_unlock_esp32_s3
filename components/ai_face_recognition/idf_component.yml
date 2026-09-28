@@ -1,0 +1,5 @@
+## Face models from Espressif's component registry (same models esp-who uses).
+## human_face_recognition 0.3.x pulls human_face_detect 0.4.x and esp-dl 3.3.x.
+dependencies:
+  idf: ">=5.3"
+  espressif/human_face_recognition: "~0.3.2"

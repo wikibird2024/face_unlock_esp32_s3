@@ -1,115 +1,125 @@
-
 #include "camera_driver.h"
-#include "esp_err.h"
+
+#include <stdbool.h>
+#include <string.h>
+
+#include "esp_camera.h"
+#include "esp_check.h"
 #include "esp_log.h"
-#include <stdlib.h>
 
 static const char *TAG = "camera_driver";
 
-// ------------------ Pin mapping for OV5640 ------------------
-#define CAM_PIN_XCLK 15
-#define CAM_PIN_SIOD 4
-#define CAM_PIN_SIOC 5
-#define CAM_PIN_D7 16
-#define CAM_PIN_D6 17
-#define CAM_PIN_D5 18
-#define CAM_PIN_D4 12
-#define CAM_PIN_D3 10
-#define CAM_PIN_D2 8
-#define CAM_PIN_D1 9
-#define CAM_PIN_D0 11
-#define CAM_PIN_VSYNC 6
-#define CAM_PIN_HREF 7
-#define CAM_PIN_PCLK 13
+/* A Kconfig bool set to "n" is not defined at all, so test it with #if. */
+#if CONFIG_CAMERA_VFLIP
+#define VFLIP_ENABLED 1
+#else
+#define VFLIP_ENABLED 0
+#endif
+#if CONFIG_CAMERA_HMIRROR
+#define HMIRROR_ENABLED 1
+#else
+#define HMIRROR_ENABLED 0
+#endif
 
-static camera_config_t camera_config;
-static bool camera_initialized = false;
+static bool s_is_initialised;
 
-// ------------------ Frame size helper ------------------
-static framesize_t get_camera_frame_size(void) {
-#if CONFIG_CAMERA_FRAME_SIZE_UXGA
-  return FRAMESIZE_UXGA;
-#elif CONFIG_CAMERA_FRAME_SIZE_SXGA
-  return FRAMESIZE_SXGA;
-#elif CONFIG_CAMERA_FRAME_SIZE_XGA
-  return FRAMESIZE_XGA;
-#elif CONFIG_CAMERA_FRAME_SIZE_SVGA
-  return FRAMESIZE_SVGA;
+static framesize_t configured_frame_size(void) {
+#if CONFIG_CAMERA_FRAME_SIZE_QVGA
+  return FRAMESIZE_QVGA;
+#elif CONFIG_CAMERA_FRAME_SIZE_HVGA
+  return FRAMESIZE_HVGA;
 #elif CONFIG_CAMERA_FRAME_SIZE_VGA
   return FRAMESIZE_VGA;
 #else
-  return FRAMESIZE_SVGA;
+#error "Pick a frame size in menuconfig: Camera driver"
 #endif
 }
 
-// ------------------ Initialization ------------------
-void camera_driver_init(void) {
-  camera_config = (camera_config_t){
-      .pin_d0 = CAM_PIN_D0,
-      .pin_d1 = CAM_PIN_D1,
-      .pin_d2 = CAM_PIN_D2,
-      .pin_d3 = CAM_PIN_D3,
-      .pin_d4 = CAM_PIN_D4,
-      .pin_d5 = CAM_PIN_D5,
-      .pin_d6 = CAM_PIN_D6,
-      .pin_d7 = CAM_PIN_D7,
-      .pin_xclk = CAM_PIN_XCLK,
-      .pin_pclk = CAM_PIN_PCLK,
-      .pin_vsync = CAM_PIN_VSYNC,
-      .pin_href = CAM_PIN_HREF,
-      .pin_sccb_sda = CAM_PIN_SIOD,
-      .pin_sccb_scl = CAM_PIN_SIOC,
-      .pin_pwdn = -1,
-      .pin_reset = -1,
-      .xclk_freq_hz = 20000000,
+esp_err_t camera_driver_init(void) {
+  ESP_RETURN_ON_FALSE(!s_is_initialised, ESP_ERR_INVALID_STATE, TAG,
+                      "already initialised");
+
+  const camera_config_t config = {
+      .pin_pwdn = CONFIG_CAMERA_PIN_PWDN,
+      .pin_reset = CONFIG_CAMERA_PIN_RESET,
+      .pin_xclk = CONFIG_CAMERA_PIN_XCLK,
+      .pin_sccb_sda = CONFIG_CAMERA_PIN_SIOD,
+      .pin_sccb_scl = CONFIG_CAMERA_PIN_SIOC,
+      .pin_d7 = CONFIG_CAMERA_PIN_D7,
+      .pin_d6 = CONFIG_CAMERA_PIN_D6,
+      .pin_d5 = CONFIG_CAMERA_PIN_D5,
+      .pin_d4 = CONFIG_CAMERA_PIN_D4,
+      .pin_d3 = CONFIG_CAMERA_PIN_D3,
+      .pin_d2 = CONFIG_CAMERA_PIN_D2,
+      .pin_d1 = CONFIG_CAMERA_PIN_D1,
+      .pin_d0 = CONFIG_CAMERA_PIN_D0,
+      .pin_vsync = CONFIG_CAMERA_PIN_VSYNC,
+      .pin_href = CONFIG_CAMERA_PIN_HREF,
+      .pin_pclk = CONFIG_CAMERA_PIN_PCLK,
+      .xclk_freq_hz = CONFIG_CAMERA_XCLK_FREQ_HZ,
       .ledc_timer = LEDC_TIMER_0,
       .ledc_channel = LEDC_CHANNEL_0,
-      .pixel_format = PIXFORMAT_JPEG,
-      .frame_size = get_camera_frame_size(),
-      .jpeg_quality = CONFIG_CAMERA_JPEG_QUALITY,
+      .pixel_format = PIXFORMAT_RGB565,
+      .frame_size = configured_frame_size(),
+      .jpeg_quality = 12, /* unused for RGB565 */
       .fb_count = 2,
-      .grab_mode = CAMERA_GRAB_WHEN_EMPTY,
       .fb_location = CAMERA_FB_IN_PSRAM,
+      /* Always hand out the newest frame so recognition is not behind. */
+      .grab_mode = CAMERA_GRAB_LATEST,
+      .sccb_i2c_port = 0,
   };
 
-  esp_err_t err = esp_camera_init(&camera_config);
+  esp_err_t err = esp_camera_init(&config);
   if (err != ESP_OK) {
-    ESP_LOGE(TAG, "Camera init failed: 0x%x", err);
-    camera_initialized = false;
-  } else {
-    camera_initialized = true;
-    ESP_LOGI(TAG, "Camera initialized successfully");
+    ESP_LOGE(TAG,
+             "Camera init failed: %s (0x%x). Check wiring, pins in "
+             "menuconfig and that PSRAM is enabled.",
+             esp_err_to_name(err), err);
+    return err;
   }
+
+  sensor_t *sensor = esp_camera_sensor_get();
+  if (sensor != NULL) {
+    ESP_LOGI(TAG, "Sensor PID 0x%04x", sensor->id.PID);
+    sensor->set_vflip(sensor, VFLIP_ENABLED);
+    sensor->set_hmirror(sensor, HMIRROR_ENABLED);
+  }
+  s_is_initialised = true;
+  ESP_LOGI(TAG, "Camera ready");
+  return ESP_OK;
 }
 
-// ------------------ Frame capture / release ------------------
-camera_frame_t *camera_driver_get_frame(void) {
-  if (!camera_initialized) {
-    ESP_LOGW(TAG, "Camera not initialized!");
-    return NULL;
+esp_err_t camera_driver_get_frame(camera_frame_t *out_frame) {
+  ESP_RETURN_ON_FALSE(out_frame != NULL, ESP_ERR_INVALID_ARG, TAG, "no output");
+  ESP_RETURN_ON_FALSE(s_is_initialised, ESP_ERR_INVALID_STATE, TAG,
+                      "not initialised");
+
+  camera_fb_t *frame_buffer = esp_camera_fb_get();
+  if (frame_buffer == NULL) {
+    ESP_LOGW(TAG, "Frame capture failed");
+    return ESP_FAIL;
   }
-
-  camera_fb_t *fb = esp_camera_fb_get();
-  if (!fb)
-    return NULL;
-
-  camera_frame_t *frame = malloc(sizeof(camera_frame_t));
-  if (!frame) {
-    esp_camera_fb_return(fb);
-    return NULL;
+  if (frame_buffer->format != PIXFORMAT_RGB565) {
+    ESP_LOGE(TAG, "Unexpected pixel format %d", frame_buffer->format);
+    esp_camera_fb_return(frame_buffer);
+    return ESP_FAIL;
   }
-
-  frame->fb = fb;
-  frame->width = fb->width;
-  frame->height = fb->height;
-
-  return frame;
+  *out_frame = (camera_frame_t){
+      .data = frame_buffer->buf,
+      .length_bytes = frame_buffer->len,
+      .width = (uint16_t)frame_buffer->width,
+      .height = (uint16_t)frame_buffer->height,
+      .timestamp_us = (int64_t)frame_buffer->timestamp.tv_sec * 1000000 +
+                      frame_buffer->timestamp.tv_usec,
+      .driver_frame = frame_buffer,
+  };
+  return ESP_OK;
 }
 
 void camera_driver_release_frame(camera_frame_t *frame) {
-  if (!frame)
+  if (frame == NULL || frame->driver_frame == NULL) {
     return;
-  if (frame->fb)
-    esp_camera_fb_return((camera_fb_t *)frame->fb);
-  free(frame);
+  }
+  esp_camera_fb_return((camera_fb_t *)frame->driver_frame);
+  memset(frame, 0, sizeof(*frame));
 }

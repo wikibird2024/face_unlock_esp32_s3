@@ -1,3 +1,0 @@
-config KEYPAD_INPUT_ENABLED
-    bool "Enable keypad_input component"
-    default y

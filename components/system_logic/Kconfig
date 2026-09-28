@@ -1,9 +1,55 @@
-menu "System_logic Configuration"
-    help
-      Configuration options for the System_logic component
+menu "System logic (unlock rules)"
 
-config SYSTEM_LOGIC_ENABLE
-    bool "Enable System_logic component"
-    default y
+    config SYSTEM_LOGIC_MIN_SIMILARITY_PERCENT
+        int "Minimum similarity to accept a face (percent)"
+        range 30 95
+        default 55
+        help
+            Cosine similarity x 100 between the seen face and the best
+            enrolled face. Higher = fewer wrong people let in, but more
+            retries for the right person. ESP-DL's own default is 50.
+            Watch "status" in the console to tune it on your faces.
+
+    config SYSTEM_LOGIC_CONFIRM_FRAMES
+        int "Frames in a row needed to decide"
+        range 1 10
+        default 3
+        help
+            The same result (same known face, or unknown) must be seen on
+            this many frames in a row before the door opens or a face is
+            rejected. Also the number of face frames needed to enroll.
+
+    config SYSTEM_LOGIC_UNLOCK_HOLD_MS
+        int "Unlock hold time (ms)"
+        range 500 60000
+        default 3000
+
+    config SYSTEM_LOGIC_COOLDOWN_MS
+        int "Cooldown after unlock, reject or enroll (ms)"
+        range 0 60000
+        default 2000
+
+    config SYSTEM_LOGIC_ENROLL_TIMEOUT_MS
+        int "Enroll timeout (ms)"
+        range 1000 120000
+        default 15000
+
+    config SYSTEM_LOGIC_ENROLL_BUTTON_GPIO
+        int "Enroll button GPIO (-1 = none)"
+        range -1 48
+        default 0
+        help
+            Active-low button with internal pull-up. GPIO 0 is the BOOT
+            button on most ESP32-S3 boards. A press enrolls the next face
+            as "user_<n>".
+
+    config SYSTEM_LOGIC_TASK_STACK_SIZE
+        int "Recognition task stack size (bytes)"
+        default 12288
+
+    config SYSTEM_LOGIC_TASK_PRIORITY
+        int "Recognition task priority"
+        range 1 20
+        default 5
 
 endmenu

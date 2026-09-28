@@ -1,17 +1,19 @@
-#ifndef NET_COMM_H
-#define NET_COMM_H
+/**
+ * @file net_comm.h
+ * @brief Network reporting. Today: listens to APP_EVENTS and logs what it
+ *        would publish. Planned: Wi-Fi + MQTT over TLS (next milestone).
+ */
+#pragma once
 
-#include <stdbool.h>
-#include <stdint.h>
+#include "esp_err.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-void net_comm_init(void);
+/** Register for APP_EVENTS. Needs the default event loop. */
+esp_err_t net_comm_init(void);
 
 #ifdef __cplusplus
 }
 #endif
-
-#endif // NET_COMM_H

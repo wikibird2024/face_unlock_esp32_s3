@@ -1,38 +1,51 @@
-
+/**
+ * @file ai_face_recognition.h
+ * @brief Face detection and face embedding with Espressif's ESP-DL models.
+ *
+ * Detection: human_face_detect (MSR+MNP by default).
+ * Embedding: human_face_recognition feature model (MobileFaceNet by
+ * default). Models are chosen in menuconfig under "models: ...".
+ *
+ * Inference only: no tasks, no storage. Not thread-safe; call from one task.
+ */
 #pragma once
 
-#include "esp_err.h"
 #include <stdbool.h>
+#include <stddef.h>
+#include <stdint.h>
+
+#include "esp_err.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-/**
- * @brief Callback function type khi có face được nhận diện.
- * @param matched true nếu face match database, false nếu không.
- */
-typedef void (*ai_face_recognition_cb_t)(bool matched);
+typedef struct {
+  bool has_face;
+  /** Number of faces found; the biggest one is used. */
+  uint16_t face_count;
+  float detect_score;
+  /** Biggest face: left, top, right, bottom in pixels. */
+  int16_t box[4];
+  /** Valid floats in the embedding buffer (0 when has_face is false). */
+  size_t embedding_len;
+  uint32_t inference_ms;
+} ai_face_result_t;
 
-/**
- * @brief Initialize AI face recognition component.
- *        Load BlazeFace & MobileFaceNet models from flash/PSRAM.
- * @return ESP_OK if success, ESP_FAIL otherwise.
- */
+/** Load both models. Takes a few hundred ms and several hundred KB PSRAM. */
 esp_err_t ai_face_recognition_init(void);
 
-/**
- * @brief Set callback function để system_logic nhận kết quả face recognition
- * @param cb callback function pointer
- */
-void ai_face_recognition_set_callback(ai_face_recognition_cb_t cb);
+/** Length of one embedding (512 for MobileFaceNet). 0 before init. */
+size_t ai_face_recognition_embedding_len(void);
 
 /**
- * @brief Process a single camera frame for face detection & recognition.
- *        Non-blocking if possible, internal task handles inference.
- * @param frame pointer to frame buffer (e.g., RGB888/QVGA)
+ * Find the biggest face in an RGB565 big-endian image and compute its
+ * embedding into `embedding` (at least ai_face_recognition_embedding_len()
+ * floats).
  */
-void ai_face_recognition_process_frame(void *frame);
+esp_err_t ai_face_recognition_run(const uint8_t *rgb565_image, uint16_t width,
+                                  uint16_t height, ai_face_result_t *result,
+                                  float *embedding, size_t embedding_capacity);
 
 #ifdef __cplusplus
 }

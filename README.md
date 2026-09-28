@@ -1,101 +1,120 @@
-
-```markdown
 # face_unlock_esp32_s3
 
-ESP32-S3 Face Unlock System (OV5640 + ESP-DL BlazeFace & MobileFaceNet)
+Door lock that opens for enrolled faces. ESP32-S3 + OV5640 camera, face
+detection and recognition with Espressif's ESP-DL models (the same models
+[esp-who](https://github.com/espressif/esp-who) uses), faces stored in flash.
 
-## Project Overview
-
-This project implements a **modular, event-driven face unlock system** on ESP32-S3:
-
-- Capture frames from OV5640 camera.
-- Detect and recognize faces using **ESP-DL** (BlazeFace for detection, MobileFaceNet for embedding & matching).
-- Control door lock via relay or servo.
-- Optional network communication (WiFi + MQTT) for logging, telemetry, or remote control.
-- Keyboard input (keypad) for manual override.
-- Centralized system logic orchestrates AI results, input, and outputs.
-
-The architecture is modular, making it easier to maintain, test, and extend.
-
----
-
-## Folder Structure
+## How it works
 
 ```
+ OV5640 ──RGB565 320x240──▶ camera_driver
+                                  │ frame
+                                  ▼
+                        ai_face_recognition  (ESP-DL: detect face → 512-float embedding)
+                                  │ embedding
+                                  ▼
+ console / BOOT button ─request─▶ system_logic task ◀──▶ face_db (cosine match, NVS "face_nvs")
+                                  │ unlock_state_machine decides
+                                  ▼
+                            door_control (GPIO, relocks itself by timer)
+                                  │
+                           APP_EVENTS (esp_event) ──▶ net_comm (log today, MQTT later)
+```
 
-.
-├── CMakeLists.txt
-├── components
-│   ├── ai_face_recognition
-│   ├── camera_driver
-│   ├── data_handler
-│   ├── door_control
-│   ├── keypad_input
-│   ├── net_comm
-│   └── system_logic
-├── idf_component.yml
-├── main
-│   ├── CMakeLists.txt
-│   └── main.c
-├── README.md
-├── sdkconfig
-└── sdkconfig.defaults
+Unlock rules (`unlock_state_machine`):
 
-````
+- The same result must be seen on **3 frames in a row** before acting
+  (stops one lucky frame from opening the door).
+- Known face (similarity ≥ 0.55) → unlock for 3 s. Unknown face → reject.
+- After an unlock, a rejection or an enroll: 2 s cooldown where faces are
+  ignored.
+- The lock output has its own timer, so it relocks even if the software
+  stalls. At boot the lock is set to locked before anything else starts.
 
-### Components
+All numbers are in `idf.py menuconfig` → *System logic (unlock rules)*.
 
-| Component               | Purpose |
-|-------------------------|---------|
-| **camera_driver**       | OV5640 initialization & frame capture |
-| **ai_face_recognition** | ESP-DL wrappers: BlazeFace + MobileFaceNet |
-| **data_handler**        | Queue/buffer for camera frames, embeddings, and intermediate data |
-| **system_logic**        | Orchestrates AI results and input events to decide actions (unlock, alert, log) |
-| **door_control**        | Relay/servo control to unlock/lock door, manage LEDs/Buzzer |
-| **keypad_input**        | Capture user input, forward events to system_logic |
-| **net_comm**            | WiFi/MQTT communication for logging, telemetry, or OTA updates |
+## Components
 
----
+| Component | Job | Tested by |
+|---|---|---|
+| `camera_driver` | OV5640 via esp32-camera, RGB565, pins in Kconfig | device |
+| `ai_face_recognition` | ESP-DL face detect + embedding (C++ inside, C API) | device |
+| `face_db` | Enrolled faces: add, delete, best match; NVS storage | host + device |
+| `system_logic` | Recognition task + unlock state machine | host (state machine) |
+| `door_control` | Lock GPIO with auto-relock timer | device |
+| `console_commands` | Serial commands for setup and debugging | manual |
+| `app_events` | Event ids and payloads shared by all components | — |
+| `net_comm` | Listens to events; MQTT is the next milestone | — |
+| `keypad_input` | Stub, not started (next milestone) | — |
 
-## Getting Started
+## Hardware
 
-1. **Prerequisites**
-   - ESP-IDF v5.x installed and `IDF_PATH` set.
-   - Ensure PSRAM is enabled for high-resolution frames or AI models.
+| Part | Default | Where to change |
+|---|---|---|
+| Module | ESP32-S3, ≥ 8 MB flash, **8 MB octal PSRAM** (N8R8 / N16R8) | `sdkconfig.defaults` |
+| Camera | OV5640, XCLK 15, SDA 4, SCL 5, D0–D7 11 9 8 10 12 18 17 16, VSYNC 6, HREF 7, PCLK 13 | menuconfig → *Camera driver* |
+| Lock output | GPIO 2, active high | menuconfig → *Door control* |
+| Enroll button | GPIO 0 (BOOT), active low | menuconfig → *System logic* |
 
-2. **Configure Project**
-   ```bash
-   idf.py menuconfig
-````
+> Quad-PSRAM modules (N8R2, N4R2): set `CONFIG_SPIRAM_MODE_QUAD=y` in
+> `sdkconfig.defaults` and delete `sdkconfig`, or the board stops at boot
+> with a PSRAM error.
 
-* Adjust camera pins in `components/camera_driver/include/camera_driver.h`.
-* Enable/disable logging or AI features via Kconfig.
+## Build and flash
 
-3. **Build & Flash**
+Needs ESP-IDF **v5.5.x** (v5.3 or newer works for ESP-DL 3.3).
 
-   ```bash
-   idf.py build
-   idf.py flash monitor
-   ```
+```bash
+. $IDF_PATH/export.sh
+idf.py build                    # first build downloads ESP-DL, models, esp32-camera
+idf.py -p /dev/ttyUSB0 flash monitor
+```
 
-4. **Testing Flow**
+After changing `sdkconfig.defaults`, delete `sdkconfig` so the new defaults
+are used. Commit the `dependencies.lock` that the first build creates so
+everyone builds the same library versions.
 
-   * Camera captures frames → pushed to `data_handler`.
-   * AI processes frame → sends results to `system_logic`.
-   * `system_logic` decides: unlock door via `door_control`, trigger alert, or log event.
-   * Optional: keypad input can override AI.
-   * Optional: network communication sends events or receives remote commands.
+## First run
 
----
+In the serial monitor:
 
-## Notes
+```
+face> enroll alice        # then look at the camera for ~1 s
+face> list
+face> status              # live similarity: use it to tune the threshold
+face> unlock              # manual override
+face> delete 1
+face> clear yes
+face> help
+```
 
-* Logging can be controlled component-wise through Kconfig.
-* Embedding database and AI threshold should be configurable.
-* System designed to be modular: each component can be developed or replaced independently.
-* Recommended: unit test each component separately before full integration.
+Or hold the BOOT button to enroll the next face as `user_<n>`.
+Enrolling the same person 2–3 times (different light or angle) makes
+matching more reliable.
 
----
+## Tests
 
+| Suite | Runs on | Command |
+|---|---|---|
+| Host unit tests: `face_db`, `unlock_state_machine` (37 tests, ASan + UBSan) | PC | see below |
+| On-device tests: `face_db` on NVS, `door_control` GPIO + timer | ESP32-S3 | `cd test/target && idf.py build flash monitor` |
 
+```bash
+cmake -S test/host -B build-host
+cmake --build build-host
+ctest --test-dir build-host --output-on-failure
+# one suite only:
+./build-host/test_unlock_state_machine
+```
 
+CI (`.github/workflows/ci.yml`) runs the host tests, a clang-format check,
+and builds the firmware and the on-device test app in the
+`espressif/idf:v5.5.1` container.
+
+## Next milestones
+
+| Milestone | Content |
+|---|---|
+| Network + security | Wi-Fi provisioning, MQTT over TLS in `net_comm`, OTA (needs a two-slot partition table), NVS encryption for faces, secure boot |
+| Keypad | Move pins off the camera/lock pins, scan + debounce, PIN unlock with lockout |
+| Liveness | Reject photos of a face (blink check or IR camera) |

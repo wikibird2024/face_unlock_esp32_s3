@@ -1,28 +1,83 @@
+menu "Camera driver"
 
-config CAMERA_DRIVER_ENABLED
-    bool "Enable Camera Driver"
-    default y
+    choice CAMERA_FRAME_SIZE
+        prompt "Frame size"
+        default CAMERA_FRAME_SIZE_QVGA
+        help
+            Bigger frames find smaller (farther) faces but make detection
+            slower. QVGA is what Espressif's face examples use on ESP32-S3.
 
-config CAMERA_FRAME_SIZE_UXGA
-    bool "UXGA (1600x1200)"
-    default n
+        config CAMERA_FRAME_SIZE_QVGA
+            bool "QVGA (320x240)"
+        config CAMERA_FRAME_SIZE_HVGA
+            bool "HVGA (480x320)"
+        config CAMERA_FRAME_SIZE_VGA
+            bool "VGA (640x480)"
+    endchoice
 
-config CAMERA_FRAME_SIZE_SXGA
-    bool "SXGA (1280x1024)"
-    default n
+    config CAMERA_XCLK_FREQ_HZ
+        int "XCLK frequency (Hz)"
+        default 20000000
 
-config CAMERA_FRAME_SIZE_XGA
-    bool "XGA (1024x768)"
-    default n
+    config CAMERA_VFLIP
+        bool "Flip image vertically"
+        default n
 
-config CAMERA_FRAME_SIZE_SVGA
-    bool "SVGA (800x600)"
-    default y
+    config CAMERA_HMIRROR
+        bool "Mirror image horizontally"
+        default n
 
-config CAMERA_FRAME_SIZE_VGA
-    bool "VGA (640x480)"
-    default n
+    menu "Camera pins"
+        comment "Defaults match the custom OV5640 board. -1 = not connected."
 
-config CAMERA_JPEG_QUALITY
-    int "JPEG Quality (10-63, lower is better)"
-    default 10
+        config CAMERA_PIN_PWDN
+            int "PWDN"
+            default -1
+        config CAMERA_PIN_RESET
+            int "RESET"
+            default -1
+        config CAMERA_PIN_XCLK
+            int "XCLK"
+            default 15
+        config CAMERA_PIN_SIOD
+            int "SIOD (SCCB SDA)"
+            default 4
+        config CAMERA_PIN_SIOC
+            int "SIOC (SCCB SCL)"
+            default 5
+        config CAMERA_PIN_D7
+            int "D7"
+            default 16
+        config CAMERA_PIN_D6
+            int "D6"
+            default 17
+        config CAMERA_PIN_D5
+            int "D5"
+            default 18
+        config CAMERA_PIN_D4
+            int "D4"
+            default 12
+        config CAMERA_PIN_D3
+            int "D3"
+            default 10
+        config CAMERA_PIN_D2
+            int "D2"
+            default 8
+        config CAMERA_PIN_D1
+            int "D1"
+            default 9
+        config CAMERA_PIN_D0
+            int "D0"
+            default 11
+        config CAMERA_PIN_VSYNC
+            int "VSYNC"
+            default 6
+        config CAMERA_PIN_HREF
+            int "HREF"
+            default 7
+        config CAMERA_PIN_PCLK
+            int "PCLK"
+            default 13
+    endmenu
+
+endmenu

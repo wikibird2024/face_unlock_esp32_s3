@@ -1,0 +1,7 @@
+# Fits 8 MB flash. Face models are built into the app (flash rodata).
+# Name,    Type, SubType, Offset,   Size
+nvs,       data, nvs,     0x9000,   0x6000
+phy_init,  data, phy,     0xf000,   0x1000
+factory,   app,  factory, 0x10000,  4M
+# Enrolled faces, kept apart from "nvs" (see CONFIG_FACE_DB_NVS_PARTITION).
+face_nvs,  data, nvs,     ,         256K

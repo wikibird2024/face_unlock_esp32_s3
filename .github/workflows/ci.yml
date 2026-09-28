@@ -1,0 +1,58 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  host-tests:
+    name: Host unit tests (face_db, unlock state machine)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build and run
+        run: |
+          cmake -S test/host -B build-host
+          cmake --build build-host
+          ctest --test-dir build-host --output-on-failure
+
+  format:
+    name: clang-format check
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check formatting
+        run: |
+          clang-format --version
+          git ls-files 'components/*.c' 'components/*.h' 'components/*.cpp' \
+                       'main/*.c' 'test/host/*.c' 'test/target/main/*.c' \
+            | xargs clang-format --dry-run --Werror
+
+  firmware:
+    name: Firmware build (ESP-IDF v5.5.1, esp32s3)
+    runs-on: ubuntu-24.04
+    container: espressif/idf:v5.5.1
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build app
+        shell: bash
+        run: |
+          . "$IDF_PATH/export.sh"
+          idf.py build
+          idf.py size
+      - name: Build on-device test app
+        shell: bash
+        run: |
+          . "$IDF_PATH/export.sh"
+          cd test/target
+          idf.py build
+      - name: Keep firmware
+        uses: actions/upload-artifact@v4
+        with:
+          name: firmware-esp32s3
+          path: |
+            build/*.bin
+            build/bootloader/bootloader.bin
+            build/partition_table/partition-table.bin
+            build/flasher_args.json
+            dependencies.lock

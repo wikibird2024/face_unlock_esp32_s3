@@ -1,1 +1,31 @@
-# Default configuration snippets (use 'idf.py menuconfig' to edit)
+# Applied when sdkconfig does not exist yet. Change settings with
+# `idf.py menuconfig`; to make a change the new default, copy it here.
+CONFIG_IDF_TARGET="esp32s3"
+
+# ---- Board: CHECK THESE AGAINST YOUR MODULE --------------------------------
+# Assumes an ESP32-S3 module with >= 8 MB flash and 8 MB *octal* PSRAM
+# (N8R8 / N16R8). For quad PSRAM (N8R2, N4R2) use CONFIG_SPIRAM_MODE_QUAD=y
+# AND remove CONFIG_SPIRAM_XIP_FROM_PSRAM below: it copies the app (with
+# ~1.5 MB of models) into PSRAM, which does not fit in 2 MB.
+# A wrong PSRAM mode fails at boot with "PSRAM ID read error".
+CONFIG_ESPTOOLPY_FLASHSIZE_8MB=y
+CONFIG_ESPTOOLPY_FLASHMODE_QIO=y
+CONFIG_SPIRAM=y
+CONFIG_SPIRAM_MODE_OCT=y
+CONFIG_SPIRAM_SPEED_80M=y
+
+# ---- Partitions -------------------------------------------------------------
+CONFIG_PARTITION_TABLE_CUSTOM=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
+
+# ---- Speed for ESP-DL (values from Espressif's face recognition example) ---
+CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ_240=y
+CONFIG_COMPILER_OPTIMIZATION_PERF=y
+CONFIG_SPIRAM_XIP_FROM_PSRAM=y
+CONFIG_ESP32S3_INSTRUCTION_CACHE_32KB=y
+CONFIG_ESP32S3_DATA_CACHE_64KB=y
+CONFIG_ESP32S3_DATA_CACHE_LINE_64B=y
+
+# ---- System -----------------------------------------------------------------
+CONFIG_FREERTOS_HZ=1000
+CONFIG_ESP_MAIN_TASK_STACK_SIZE=8192

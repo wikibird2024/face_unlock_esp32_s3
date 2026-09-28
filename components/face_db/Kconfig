@@ -1,0 +1,19 @@
+menu "Face store (face_db)"
+
+    config FACE_DB_MAX_FACES
+        int "Maximum number of enrolled faces"
+        range 1 200
+        default 20
+        help
+            Each face uses about 2 KB of RAM (PSRAM) and flash.
+            Several enrollments of one person count as several faces.
+
+    config FACE_DB_NVS_PARTITION
+        string "NVS partition label for faces"
+        default "face_nvs"
+        help
+            Must match a data/nvs partition in partitions.csv. Kept apart
+            from the default "nvs" partition so erasing faces never erases
+            Wi-Fi or calibration settings.
+
+endmenu

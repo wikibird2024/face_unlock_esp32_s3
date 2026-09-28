@@ -1,3 +1,17 @@
-config DOOR_CONTROL_ENABLED
-    bool "door_control enabled"
-    default y
+menu "Door control"
+
+    config DOOR_LOCK_GPIO
+        int "Lock output GPIO"
+        range 0 48
+        default 2
+        help
+            GPIO that drives the lock relay or MOSFET. Must not be used by
+            the camera or by flash/PSRAM.
+
+    config DOOR_LOCK_ACTIVE_HIGH
+        bool "Lock opens when the GPIO is high"
+        default y
+        help
+            Turn off for relay boards that switch on a low input.
+
+endmenu
