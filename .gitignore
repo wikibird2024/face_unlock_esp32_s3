@@ -15,6 +15,7 @@ sdkconfig.old
 # Editor
 .vscode/
 .idea/
+.cache/
 *.swp
 *~
 

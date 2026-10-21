@@ -116,5 +116,5 @@ and builds the firmware and the on-device test app in the
 | Milestone | Content |
 |---|---|
 | Network + security | Wi-Fi provisioning, MQTT over TLS in `net_comm`, OTA (needs a two-slot partition table), NVS encryption for faces, secure boot |
-| Keypad | Move pins off the camera/lock pins, scan + debounce, PIN unlock with lockout |
+| Keypad | Matrix or single-button keypad: pick GPIOs in Kconfig clear of the camera/lock pins, scan + debounce, key/PIN API or events, PIN unlock with lockout |
 | Liveness | Reject photos of a face (blink check or IR camera) |
