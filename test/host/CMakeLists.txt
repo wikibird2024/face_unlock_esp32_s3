@@ -34,10 +34,10 @@ endfunction()
 enable_testing()
 
 add_host_test(test_face_db
-  SOURCES test_face_db.c ${REPO_ROOT}/components/face_db/src/face_db.c
-  INCLUDES ${REPO_ROOT}/components/face_db/include)
+  SOURCES test_face_db.c ${REPO_ROOT}/components/face_db/face_db.c
+  INCLUDES ${REPO_ROOT}/components/face_db)
 
 add_host_test(test_unlock_state_machine
   SOURCES test_unlock_state_machine.c
-          ${REPO_ROOT}/components/system_logic/src/unlock_state_machine.c
-  INCLUDES ${REPO_ROOT}/components/system_logic/include)
+          ${REPO_ROOT}/components/system_logic/unlock_state_machine.c
+  INCLUDES ${REPO_ROOT}/components/system_logic)

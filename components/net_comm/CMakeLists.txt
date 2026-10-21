@@ -1,5 +1,5 @@
 idf_component_register(
-    SRCS "src/net_comm.c"
-    INCLUDE_DIRS "include"
+    SRCS "net_comm.c"
+    INCLUDE_DIRS "."
     PRIV_REQUIRES app_events
 )

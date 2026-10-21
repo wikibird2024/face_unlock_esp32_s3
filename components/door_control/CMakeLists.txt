@@ -1,5 +1,5 @@
 idf_component_register(
-    SRCS "src/door_control.c"
-    INCLUDE_DIRS "include"
+    SRCS "door_control.c"
+    INCLUDE_DIRS "."
     PRIV_REQUIRES esp_driver_gpio esp_timer
 )

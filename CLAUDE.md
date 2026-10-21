@@ -33,7 +33,7 @@ git ls-files 'components/*.[ch]' 'components/*.cpp' 'main/*.c' 'test/host/*.c' \
 ## Architecture rules
 
 - **Pure logic is plain C with no ESP-IDF includes** so it runs in host
-  tests: `face_db/src/face_db.c` and `system_logic/src/unlock_state_machine.c`.
+  tests: `face_db/face_db.c` and `system_logic/unlock_state_machine.c`.
   Hardware and OS access goes in separate files (`face_db_nvs.c`,
   `system_logic.c`). Storage and locking reach `face_db` through the
   `face_db_storage_t` / `face_db_lock_t` function tables - keep it that way.
