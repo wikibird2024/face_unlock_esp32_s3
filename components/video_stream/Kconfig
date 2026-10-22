@@ -1,0 +1,28 @@
+menu "Video stream"
+
+    config VIDEO_STREAM_ENABLE
+        bool "Serve the camera over HTTP (/, /stream, /jpg)"
+        default y
+        help
+            Live MJPEG view of the camera for a browser or phone on the
+            same Wi-Fi. Needs a Wi-Fi SSID in "Network (net_comm)".
+            No login: anyone on the Wi-Fi can watch.
+
+    if VIDEO_STREAM_ENABLE
+
+        config VIDEO_STREAM_JPEG_QUALITY
+            int "JPEG quality (1-100)"
+            range 1 100
+            default 80
+
+        config VIDEO_STREAM_MAX_FPS
+            int "Frame rate limit (frames per second)"
+            range 1 30
+            default 10
+            help
+                Streaming shares the camera and PSRAM with face
+                recognition; keep this modest.
+
+    endif
+
+endmenu

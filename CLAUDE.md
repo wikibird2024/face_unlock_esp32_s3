@@ -66,4 +66,10 @@ git ls-files 'components/*.[ch]' 'components/*.cpp' 'main/*.c' 'test/host/*.c' \
   not confirmed for the custom board.
 - `keypad_input` is a stub with no pins chosen yet; pick them clear of the
   camera and lock pins (README "Next milestones").
-- `net_comm` only logs events; no Wi-Fi/MQTT yet.
+- `net_comm` has a Wi-Fi station (off when the SSID is empty) but no MQTT
+  yet; the planned contract is `docs/mqtt_contract.md`.
+- `video_stream` (HTTP MJPEG) has no login; anyone on the Wi-Fi can watch.
+- With Wi-Fi on, the app uses ~83% of the 4 MB `factory` partition. Grow it
+  in `partitions.csv` (8 MB flash has room) before adding MQTT/TLS.
+- An empty Wi-Fi SSID lets the compiler drop all Wi-Fi/stream code, so a
+  default build does not prove it links; build once with a dummy SSID.

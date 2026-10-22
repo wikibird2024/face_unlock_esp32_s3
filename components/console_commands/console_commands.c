@@ -10,6 +10,7 @@
 #include "esp_console.h"
 #include "esp_heap_caps.h"
 #include "esp_log.h"
+#include "net_comm.h"
 #include "system_logic.h"
 
 static const char *TAG = "console";
@@ -52,6 +53,15 @@ static int command_status(int argc, char **argv) {
     }
   }
   printf("door             %s\n", door_control_is_open() ? "open" : "locked");
+  if (net_comm_is_connected()) {
+    char ip[NET_COMM_IP_MAX_LEN];
+    net_comm_get_ip(ip);
+    printf("wifi             connected, live view http://%s/\n", ip);
+  } else {
+    printf("wifi             %s\n", CONFIG_NET_COMM_WIFI_SSID[0] == '\0'
+                                        ? "off (no SSID in menuconfig)"
+                                        : "not connected");
+  }
   if (s_face_db != NULL) {
     printf("faces            %u / %u (skipped at boot: %u)\n",
            (unsigned)face_db_count(s_face_db),

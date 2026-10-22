@@ -10,6 +10,7 @@
 #include "net_comm.h"
 #include "nvs_flash.h"
 #include "system_logic.h"
+#include "video_stream.h"
 
 static const char *TAG = "app_main";
 
@@ -53,6 +54,9 @@ void app_main(void) {
              "Recognition NOT running (%s). Door stays locked; console "
              "is still available for diagnosis.",
              esp_err_to_name(err));
+  }
+  if (err == ESP_OK && video_stream_start() != ESP_OK) {
+    ESP_LOGW(TAG, "Live view not running; everything else works");
   }
 
   ESP_ERROR_CHECK(console_commands_start(face_db));

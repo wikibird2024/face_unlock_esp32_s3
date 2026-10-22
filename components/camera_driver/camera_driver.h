@@ -38,6 +38,15 @@ esp_err_t camera_driver_get_frame(camera_frame_t *out_frame);
 
 void camera_driver_release_frame(camera_frame_t *frame);
 
+/**
+ * Compress a frame to JPEG (for the video stream; recognition uses the
+ * raw frame). `quality` is 1-100, higher = better picture, bigger file.
+ * On success `*out_jpeg` is allocated; free it with free().
+ */
+esp_err_t camera_driver_frame_to_jpeg(const camera_frame_t *frame,
+                                      uint8_t quality, uint8_t **out_jpeg,
+                                      size_t *out_length_bytes);
+
 #ifdef __cplusplus
 }
 #endif

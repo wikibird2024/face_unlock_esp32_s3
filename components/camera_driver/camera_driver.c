@@ -62,7 +62,9 @@ esp_err_t camera_driver_init(void) {
       .pixel_format = PIXFORMAT_RGB565,
       .frame_size = configured_frame_size(),
       .jpeg_quality = 12, /* unused for RGB565 */
-      .fb_count = 2,
+      /* 3 buffers: recognition and the video stream can each hold one
+       * while the driver still has one free to capture into. */
+      .fb_count = 3,
       .fb_location = CAMERA_FB_IN_PSRAM,
       /* Always hand out the newest frame so recognition is not behind. */
       .grab_mode = CAMERA_GRAB_LATEST,
@@ -113,6 +115,20 @@ esp_err_t camera_driver_get_frame(camera_frame_t *out_frame) {
                       frame_buffer->timestamp.tv_usec,
       .driver_frame = frame_buffer,
   };
+  return ESP_OK;
+}
+
+esp_err_t camera_driver_frame_to_jpeg(const camera_frame_t *frame,
+                                      uint8_t quality, uint8_t **out_jpeg,
+                                      size_t *out_length_bytes) {
+  ESP_RETURN_ON_FALSE(frame != NULL && frame->driver_frame != NULL &&
+                          out_jpeg != NULL && out_length_bytes != NULL,
+                      ESP_ERR_INVALID_ARG, TAG, "bad jpeg arguments");
+  if (!frame2jpg((camera_fb_t *)frame->driver_frame, quality, out_jpeg,
+                 out_length_bytes)) {
+    ESP_LOGW(TAG, "JPEG compression failed");
+    return ESP_FAIL;
+  }
   return ESP_OK;
 }
 

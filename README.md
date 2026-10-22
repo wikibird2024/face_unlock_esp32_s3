@@ -44,7 +44,8 @@ All numbers are in `idf.py menuconfig` → *System logic (unlock rules)*.
 | `door_control` | Lock GPIO with auto-relock timer | device |
 | `console_commands` | Serial commands for setup and debugging | manual |
 | `app_events` | Event ids and payloads shared by all components | — |
-| `net_comm` | Listens to events; MQTT is the next milestone | — |
+| `net_comm` | Wi-Fi station (optional); listens to events, MQTT is the next milestone | — |
+| `video_stream` | Live camera view over HTTP (`/`, `/stream`, `/jpg`) | manual |
 | `keypad_input` | Stub, not started (next milestone) | — |
 
 ## Hardware
@@ -92,6 +93,15 @@ Or hold the BOOT button to enroll the next face as `user_<n>`.
 Enrolling the same person 2–3 times (different light or angle) makes
 matching more reliable.
 
+### Watch the camera live (optional)
+
+Set menuconfig → *Network (net_comm)* → Wi-Fi name and password (they stay
+in `sdkconfig`, which git ignores). After boot, `status` shows the IP;
+open `http://<ip>/` in a browser or phone on the same Wi-Fi for a live
+MJPEG view (one viewer at a time, `/jpg` for a snapshot). There is no
+login on the stream yet — anyone on the Wi-Fi can watch (see the
+hardening milestone). Face recognition keeps running while streaming.
+
 ### Two-step unlock (optional)
 
 Set menuconfig → *System logic* → *Wait for approval after a known face*
@@ -130,7 +140,8 @@ and builds the firmware and the on-device test app in the
 
 | Milestone | Content |
 |---|---|
-| Phone approval | Wi-Fi + Telegram bot answers the two-step request (`APP_EVENT_APPROVAL_REQUESTED` → message with Open/Deny → `system_logic_request_approve()`); each face linked to its owner's Telegram id |
+| Phone approval (phases, see `docs/mqtt_contract.md`) | A: MQTT in `net_comm` → B: Flutter app skeleton (`app/`) → C: pairing + HMAC-signed answers → D: push notifications |
+| Hardening | Login on the video stream, console `unlock` off in release, admin-only enroll, flash + NVS encryption |
 | Network + security | Wi-Fi provisioning, MQTT over TLS in `net_comm`, OTA (needs a two-slot partition table), NVS encryption for faces, secure boot |
 | Keypad | Matrix or single-button keypad: pick GPIOs in Kconfig clear of the camera/lock pins, scan + debounce, key/PIN API or events, PIN unlock with lockout |
 | Liveness | Reject photos of a face (blink check or IR camera) |

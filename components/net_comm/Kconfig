@@ -1,0 +1,22 @@
+menu "Network (net_comm)"
+
+    config NET_COMM_WIFI_SSID
+        string "Wi-Fi network name (empty = Wi-Fi off)"
+        default ""
+        help
+            Name of the Wi-Fi network to join as a station. Leave empty to
+            run without Wi-Fi (events are only logged). The value lands in
+            sdkconfig, which is not committed to git.
+
+    config NET_COMM_WIFI_PASSWORD
+        string "Wi-Fi password"
+        default ""
+        help
+            Password of the Wi-Fi network. Empty means an open network.
+
+    config NET_COMM_WIFI_RETRY_DELAY_MS
+        int "Delay before a reconnect attempt (ms)"
+        range 1000 60000
+        default 5000
+
+endmenu
