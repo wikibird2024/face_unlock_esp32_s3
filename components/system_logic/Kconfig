@@ -34,6 +34,17 @@ menu "System logic (unlock rules)"
         range 1000 120000
         default 15000
 
+    config SYSTEM_LOGIC_APPROVAL_TIMEOUT_MS
+        int "Wait for approval after a known face (ms, 0 = off)"
+        range 0 120000
+        default 0
+        help
+            0: a known face opens the door at once.
+            Above 0: a known face only asks for approval (second step) and
+            the door opens when "approve <id>" arrives within this time;
+            "deny <id>" or the timeout rejects it. Today the answer comes
+            from the console; a phone (Telegram) is the next milestone.
+
     config SYSTEM_LOGIC_ENROLL_BUTTON_GPIO
         int "Enroll button GPIO (-1 = none)"
         range -1 48

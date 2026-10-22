@@ -33,12 +33,21 @@ typedef enum {
   APP_EVENT_FACE_ENROLLED,
   /** Payload app_event_face_t (name). Timeout, cancel or store error. */
   APP_EVENT_ENROLL_FAILED,
+  /** Payload app_event_face_t (face, name, request_id). A known face waits
+   * for system_logic_request_approve(request_id) or _deny(request_id). */
+  APP_EVENT_APPROVAL_REQUESTED,
+  /** Payload app_event_face_t (face, name, request_id). */
+  APP_EVENT_APPROVAL_DENIED,
+  /** Payload app_event_face_t (face, name, request_id). */
+  APP_EVENT_APPROVAL_TIMEOUT,
 } app_event_id_t;
 
 typedef struct {
   uint16_t face_id;
   float similarity;
   char name[APP_EVENT_NAME_MAX_LEN + 1];
+  /** Approval events: the request id; 0 for other events. */
+  uint32_t request_id;
 } app_event_face_t;
 
 const char *app_event_name(int32_t event_id);

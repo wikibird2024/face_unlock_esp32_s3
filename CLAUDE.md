@@ -60,11 +60,10 @@ git ls-files 'components/*.[ch]' 'components/*.cpp' 'main/*.c' 'test/host/*.c' \
 
 ## Known gaps
 
-- Firmware is built only by the CI `firmware` job (passing); it has not
-  been run on a board yet.
+- Firmware builds locally (ESP-IDF v5.5.1 in `~/esp/esp-idf-v5.5.1`) and
+  in CI, but has not been run on a board yet.
 - Board assumptions in `sdkconfig.defaults` (8 MB flash, octal PSRAM) are
   not confirmed for the custom board.
 - `keypad_input` is a stub with no pins chosen yet; pick them clear of the
   camera and lock pins (README "Next milestones").
 - `net_comm` only logs events; no Wi-Fi/MQTT yet.
-- `dependencies.lock` is not committed yet; add it from the first build.

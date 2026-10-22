@@ -92,11 +92,26 @@ Or hold the BOOT button to enroll the next face as `user_<n>`.
 Enrolling the same person 2–3 times (different light or angle) makes
 matching more reliable.
 
+### Two-step unlock (optional)
+
+Set menuconfig → *System logic* → *Wait for approval after a known face*
+to a time in ms (for example 30000). A known face then does not open the
+door; it asks for approval and the log shows a request id:
+
+```
+system_logic: WAIT for approval #1234 for 'alice' (similarity 0.71): approve 1234 / deny 1234
+face> approve 1234        # door opens; "deny 1234" or the timeout rejects
+```
+
+Only the current request id counts, so an old answer cannot open the door
+later. Today the console gives the answer; a phone (Telegram) is the next
+milestone, through the same `system_logic_request_approve()` call.
+
 ## Tests
 
 | Suite | Runs on | Command |
 |---|---|---|
-| Host unit tests: `face_db`, `unlock_state_machine` (37 tests, ASan + UBSan) | PC | see below |
+| Host unit tests: `face_db`, `unlock_state_machine` (50 tests, ASan + UBSan) | PC | see below |
 | On-device tests: `face_db` on NVS, `door_control` GPIO + timer | ESP32-S3 | `cd test/target && idf.py build flash monitor` |
 
 ```bash
@@ -115,6 +130,7 @@ and builds the firmware and the on-device test app in the
 
 | Milestone | Content |
 |---|---|
+| Phone approval | Wi-Fi + Telegram bot answers the two-step request (`APP_EVENT_APPROVAL_REQUESTED` → message with Open/Deny → `system_logic_request_approve()`); each face linked to its owner's Telegram id |
 | Network + security | Wi-Fi provisioning, MQTT over TLS in `net_comm`, OTA (needs a two-slot partition table), NVS encryption for faces, secure boot |
 | Keypad | Matrix or single-button keypad: pick GPIOs in Kconfig clear of the camera/lock pins, scan + debounce, key/PIN API or events, PIN unlock with lockout |
 | Liveness | Reject photos of a face (blink check or IR camera) |

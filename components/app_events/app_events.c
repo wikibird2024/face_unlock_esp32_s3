@@ -16,6 +16,12 @@ const char *app_event_name(int32_t event_id) {
     return "face_enrolled";
   case APP_EVENT_ENROLL_FAILED:
     return "enroll_failed";
+  case APP_EVENT_APPROVAL_REQUESTED:
+    return "approval_requested";
+  case APP_EVENT_APPROVAL_DENIED:
+    return "approval_denied";
+  case APP_EVENT_APPROVAL_TIMEOUT:
+    return "approval_timeout";
   }
   return "unknown";
 }

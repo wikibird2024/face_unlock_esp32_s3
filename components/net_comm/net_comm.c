@@ -16,9 +16,10 @@ static void on_app_event(void *handler_argument, esp_event_base_t base,
   /* Placeholder for MQTT: log the topic and payload that would be sent. */
   if (face != NULL) {
     ESP_LOGI(TAG,
-             "publish %s%s {\"id\":%u,\"name\":\"%s\",\"similarity\":%.3f}",
+             "publish %s%s {\"id\":%u,\"name\":\"%s\",\"similarity\":%.3f,"
+             "\"request\":%lu}",
              TOPIC_PREFIX, app_event_name(event_id), face->face_id, face->name,
-             face->similarity);
+             face->similarity, (unsigned long)face->request_id);
   } else {
     ESP_LOGI(TAG, "publish %s%s {}", TOPIC_PREFIX, app_event_name(event_id));
   }

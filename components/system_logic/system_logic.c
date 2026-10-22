@@ -11,6 +11,7 @@
 #include "driver/gpio.h"
 #include "esp_check.h"
 #include "esp_log.h"
+#include "esp_random.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
@@ -31,11 +32,14 @@ typedef enum {
   REQUEST_ENROLL,
   REQUEST_CANCEL_ENROLL,
   REQUEST_UNLOCK,
+  REQUEST_APPROVE,
+  REQUEST_DENY,
 } request_type_t;
 
 typedef struct {
   request_type_t type;
   char name[FACE_DB_NAME_MAX_LEN + 1];
+  uint32_t request_id;
 } request_t;
 
 /* What the current frame showed; used when carrying out an action. */
@@ -49,6 +53,8 @@ static face_db_t *s_face_db;
 static unlock_state_machine_t s_machine;
 static float *s_embedding;
 static char s_enroll_name[FACE_DB_NAME_MAX_LEN + 1];
+/* Name of the face waiting for approval (the frame is gone by the answer). */
+static char s_approval_name[FACE_DB_NAME_MAX_LEN + 1];
 
 static portMUX_TYPE s_status_lock = portMUX_INITIALIZER_UNLOCKED;
 static system_logic_status_t s_status;
@@ -56,8 +62,10 @@ static system_logic_status_t s_status;
 static uint32_t now_ms(void) { return (uint32_t)(esp_timer_get_time() / 1000); }
 
 static void post_event(app_event_id_t event_id, uint16_t face_id,
-                       float similarity, const char *name) {
-  app_event_face_t payload = {.face_id = face_id, .similarity = similarity};
+                       float similarity, const char *name,
+                       uint32_t request_id) {
+  app_event_face_t payload = {
+      .face_id = face_id, .similarity = similarity, .request_id = request_id};
   if (name != NULL) {
     strncpy(payload.name, name, APP_EVENT_NAME_MAX_LEN);
   }
@@ -69,9 +77,10 @@ static void post_event(app_event_id_t event_id, uint16_t face_id,
   }
 }
 
-static void update_status(unlock_state_t state) {
+static void update_status(void) {
   taskENTER_CRITICAL(&s_status_lock);
-  s_status.state = state;
+  s_status.state = unlock_sm_state(&s_machine);
+  s_status.waiting_request_id = unlock_sm_waiting_request_id(&s_machine);
   taskEXIT_CRITICAL(&s_status_lock);
 }
 
@@ -82,8 +91,10 @@ static void carry_out(const unlock_action_t *action,
     return;
 
   case UNLOCK_ACTION_OPEN_DOOR: {
-    const char *name =
-        action->face_id == FACE_DB_NO_ID ? "manual" : frame->match.name;
+    /* Opened by an approval: no frame, the name was kept when asking. */
+    const char *name = action->face_id == FACE_DB_NO_ID ? "manual"
+                       : frame->has_embedding           ? frame->match.name
+                                                        : s_approval_name;
     ESP_LOGI(TAG, "OPEN for '%s' (id %u, similarity %.2f)", name,
              action->face_id, action->similarity);
     esp_err_t err = door_control_open(CONFIG_SYSTEM_LOGIC_UNLOCK_HOLD_MS);
@@ -91,32 +102,32 @@ static void carry_out(const unlock_action_t *action,
       ESP_LOGE(TAG, "Door open failed: %s", esp_err_to_name(err));
       return;
     }
-    post_event(APP_EVENT_DOOR_OPENED, action->face_id, action->similarity,
-               name);
+    post_event(APP_EVENT_DOOR_OPENED, action->face_id, action->similarity, name,
+               0);
     return;
   }
 
   case UNLOCK_ACTION_CLOSE_DOOR:
     door_control_close();
-    post_event(APP_EVENT_DOOR_CLOSED, 0, 0.0f, NULL);
+    post_event(APP_EVENT_DOOR_CLOSED, 0, 0.0f, NULL, 0);
     return;
 
   case UNLOCK_ACTION_REJECT_FACE:
     ESP_LOGI(TAG, "REJECT unknown face (best similarity %.2f)",
              action->similarity);
-    post_event(APP_EVENT_FACE_REJECTED, 0, action->similarity, NULL);
+    post_event(APP_EVENT_FACE_REJECTED, 0, action->similarity, NULL, 0);
     return;
 
   case UNLOCK_ACTION_ENROLL_STARTED:
     ESP_LOGI(TAG, "Enrolling '%s': look at the camera", s_enroll_name);
-    post_event(APP_EVENT_ENROLL_STARTED, 0, 0.0f, s_enroll_name);
+    post_event(APP_EVENT_ENROLL_STARTED, 0, 0.0f, s_enroll_name, 0);
     return;
 
   case UNLOCK_ACTION_ENROLL_FACE: {
     if (!frame->has_embedding) {
       /* The state machine only asks for this on a face frame. */
       ESP_LOGE(TAG, "Enroll without a face embedding");
-      post_event(APP_EVENT_ENROLL_FAILED, 0, 0.0f, s_enroll_name);
+      post_event(APP_EVENT_ENROLL_FAILED, 0, 0.0f, s_enroll_name, 0);
       return;
     }
     uint16_t id = FACE_DB_NO_ID;
@@ -126,12 +137,12 @@ static void carry_out(const unlock_action_t *action,
     if (status != FACE_DB_OK) {
       ESP_LOGE(TAG, "Enroll '%s' failed: %s", s_enroll_name,
                face_db_status_name(status));
-      post_event(APP_EVENT_ENROLL_FAILED, 0, 0.0f, s_enroll_name);
+      post_event(APP_EVENT_ENROLL_FAILED, 0, 0.0f, s_enroll_name, 0);
       return;
     }
     ESP_LOGI(TAG, "Enrolled '%s' as id %u (%u faces)", s_enroll_name, id,
              (unsigned)face_db_count(s_face_db));
-    post_event(APP_EVENT_FACE_ENROLLED, id, 0.0f, s_enroll_name);
+    post_event(APP_EVENT_FACE_ENROLLED, id, 0.0f, s_enroll_name, 0);
     return;
   }
 
@@ -139,30 +150,58 @@ static void carry_out(const unlock_action_t *action,
   case UNLOCK_ACTION_ENROLL_CANCELLED:
     ESP_LOGW(TAG, "Enroll '%s': %s", s_enroll_name,
              unlock_action_name(action->type));
-    post_event(APP_EVENT_ENROLL_FAILED, 0, 0.0f, s_enroll_name);
+    post_event(APP_EVENT_ENROLL_FAILED, 0, 0.0f, s_enroll_name, 0);
     return;
 
   case UNLOCK_ACTION_BUSY:
-    ESP_LOGW(TAG, "Request refused: door is open");
-    post_event(APP_EVENT_ENROLL_FAILED, 0, 0.0f, s_enroll_name);
+    ESP_LOGW(TAG, "Request refused: door open or waiting for approval");
+    post_event(APP_EVENT_ENROLL_FAILED, 0, 0.0f, s_enroll_name, 0);
     return;
+
+  case UNLOCK_ACTION_ASK_APPROVAL:
+    memcpy(s_approval_name, frame->match.name, sizeof(s_approval_name));
+    ESP_LOGI(TAG,
+             "WAIT for approval #%lu for '%s' (similarity %.2f): "
+             "approve %lu / deny %lu",
+             (unsigned long)action->request_id, s_approval_name,
+             action->similarity, (unsigned long)action->request_id,
+             (unsigned long)action->request_id);
+    post_event(APP_EVENT_APPROVAL_REQUESTED, action->face_id,
+               action->similarity, s_approval_name, action->request_id);
+    return;
+
+  case UNLOCK_ACTION_APPROVAL_DENIED:
+  case UNLOCK_ACTION_APPROVAL_TIMEOUT: {
+    const bool is_denied = action->type == UNLOCK_ACTION_APPROVAL_DENIED;
+    ESP_LOGI(TAG, "REJECT '%s': approval #%lu %s", s_approval_name,
+             (unsigned long)action->request_id,
+             is_denied ? "denied" : "timed out");
+    post_event(is_denied ? APP_EVENT_APPROVAL_DENIED
+                         : APP_EVENT_APPROVAL_TIMEOUT,
+               action->face_id, action->similarity, s_approval_name,
+               action->request_id);
+    return;
+  }
   }
 }
 
 static void handle_input(unlock_input_type_t type, const frame_result_t *frame,
-                         uint16_t face_id, float similarity) {
-  const unlock_input_t input = {
-      .type = type, .face_id = face_id, .similarity = similarity};
+                         uint16_t face_id, float similarity,
+                         uint32_t request_id) {
+  const unlock_input_t input = {.type = type,
+                                .face_id = face_id,
+                                .similarity = similarity,
+                                .request_id = request_id};
   const unlock_state_t state_before = unlock_sm_state(&s_machine);
   const unlock_action_t action = unlock_sm_handle(&s_machine, &input, now_ms());
   if (state_before == UNLOCK_STATE_ENROLLING &&
       action.type == UNLOCK_ACTION_OPEN_DOOR) {
     /* A manual unlock ends a running enroll; tell listeners. */
     ESP_LOGW(TAG, "Enroll '%s' ended by manual unlock", s_enroll_name);
-    post_event(APP_EVENT_ENROLL_FAILED, 0, 0.0f, s_enroll_name);
+    post_event(APP_EVENT_ENROLL_FAILED, 0, 0.0f, s_enroll_name, 0);
   }
   carry_out(&action, frame);
-  update_status(unlock_sm_state(&s_machine));
+  update_status();
 }
 
 static void handle_requests(void) {
@@ -172,13 +211,23 @@ static void handle_requests(void) {
     switch (request.type) {
     case REQUEST_ENROLL:
       memcpy(s_enroll_name, request.name, sizeof(s_enroll_name));
-      handle_input(UNLOCK_INPUT_START_ENROLL, &no_frame, 0, 0.0f);
+      handle_input(UNLOCK_INPUT_START_ENROLL, &no_frame, 0, 0.0f, 0);
       break;
     case REQUEST_CANCEL_ENROLL:
-      handle_input(UNLOCK_INPUT_CANCEL_ENROLL, &no_frame, 0, 0.0f);
+      handle_input(UNLOCK_INPUT_CANCEL_ENROLL, &no_frame, 0, 0.0f, 0);
       break;
     case REQUEST_UNLOCK:
-      handle_input(UNLOCK_INPUT_MANUAL_UNLOCK, &no_frame, 0, 0.0f);
+      handle_input(UNLOCK_INPUT_MANUAL_UNLOCK, &no_frame, 0, 0.0f, 0);
+      break;
+    case REQUEST_APPROVE:
+    case REQUEST_DENY:
+      if (request.request_id != unlock_sm_waiting_request_id(&s_machine)) {
+        ESP_LOGW(TAG, "Answer to approval #%lu ignored: not waiting for it",
+                 (unsigned long)request.request_id);
+      }
+      handle_input(request.type == REQUEST_APPROVE ? UNLOCK_INPUT_APPROVE
+                                                   : UNLOCK_INPUT_DENY,
+                   &no_frame, 0, 0.0f, request.request_id);
       break;
     }
   }
@@ -248,9 +297,9 @@ static void process_frame(void) {
 
   if (ai_result.has_face) {
     handle_input(UNLOCK_INPUT_FACE, &frame, frame.match.id,
-                 frame.match.similarity);
+                 frame.match.similarity, 0);
   } else {
-    handle_input(UNLOCK_INPUT_NO_FACE, &frame, 0, 0.0f);
+    handle_input(UNLOCK_INPUT_NO_FACE, &frame, 0, 0.0f, 0);
   }
 }
 
@@ -263,7 +312,7 @@ static void recognition_task(void *argument) {
     handle_requests();
     poll_enroll_button();
     process_frame();
-    handle_input(UNLOCK_INPUT_TICK, &no_frame, 0, 0.0f);
+    handle_input(UNLOCK_INPUT_TICK, &no_frame, 0, 0.0f, 0);
     /* Let the idle task on this core run (task watchdog, heap cleanup)
      * even when a new frame is always ready. */
     vTaskDelay(pdMS_TO_TICKS(LOOP_YIELD_MS));
@@ -307,10 +356,12 @@ esp_err_t system_logic_start(face_db_t *face_db) {
       .unlock_hold_ms = CONFIG_SYSTEM_LOGIC_UNLOCK_HOLD_MS,
       .cooldown_ms = CONFIG_SYSTEM_LOGIC_COOLDOWN_MS,
       .enroll_timeout_ms = CONFIG_SYSTEM_LOGIC_ENROLL_TIMEOUT_MS,
+      .approval_timeout_ms = CONFIG_SYSTEM_LOGIC_APPROVAL_TIMEOUT_MS,
+      .first_request_id = esp_random(),
   };
   unlock_sm_init(&s_machine, &config);
   s_status.min_similarity = config.min_similarity;
-  update_status(unlock_sm_state(&s_machine));
+  update_status();
 
   /* The queue is made last: requests are only accepted once the task that
    * reads them exists. */
@@ -358,6 +409,16 @@ esp_err_t system_logic_request_cancel_enroll(void) {
 
 esp_err_t system_logic_request_unlock(void) {
   const request_t request = {.type = REQUEST_UNLOCK};
+  return send_request(&request);
+}
+
+esp_err_t system_logic_request_approve(uint32_t request_id) {
+  const request_t request = {.type = REQUEST_APPROVE, .request_id = request_id};
+  return send_request(&request);
+}
+
+esp_err_t system_logic_request_deny(uint32_t request_id) {
+  const request_t request = {.type = REQUEST_DENY, .request_id = request_id};
   return send_request(&request);
 }
 

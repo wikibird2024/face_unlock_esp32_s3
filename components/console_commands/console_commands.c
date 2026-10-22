@@ -1,5 +1,6 @@
 #include "console_commands.h"
 
+#include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -44,6 +45,11 @@ static int command_status(int argc, char **argv) {
            (unsigned long)status.last_inference_ms);
     printf("last best match  id %u, similarity %.3f (need %.2f)\n",
            status.last_face_id, status.last_similarity, status.min_similarity);
+    if (status.waiting_request_id != 0) {
+      printf("approval         waiting #%lu (approve / deny %lu)\n",
+             (unsigned long)status.waiting_request_id,
+             (unsigned long)status.waiting_request_id);
+    }
   }
   printf("door             %s\n", door_control_is_open() ? "open" : "locked");
   if (s_face_db != NULL) {
@@ -144,6 +150,31 @@ static int command_unlock(int argc, char **argv) {
   return report(system_logic_request_unlock());
 }
 
+/* approve <id> / deny <id>: the console stands in for the phone. */
+static int command_answer(int argc, char **argv, bool is_approve) {
+  if (argc != 2) {
+    printf("Usage: %s <id>   (id from the log or 'status')\n", argv[0]);
+    return 1;
+  }
+  char *end = NULL;
+  errno = 0;
+  const unsigned long request_id = strtoul(argv[1], &end, 10);
+  if (end == argv[1] || *end != '\0' || errno == ERANGE || request_id == 0) {
+    printf("Not a valid id: %s\n", argv[1]);
+    return 1;
+  }
+  return report(is_approve ? system_logic_request_approve((uint32_t)request_id)
+                           : system_logic_request_deny((uint32_t)request_id));
+}
+
+static int command_approve(int argc, char **argv) {
+  return command_answer(argc, argv, true);
+}
+
+static int command_deny(int argc, char **argv) {
+  return command_answer(argc, argv, false);
+}
+
 static esp_err_t register_commands(void) {
   const esp_console_cmd_t commands[] = {
       {.command = "status",
@@ -168,6 +199,14 @@ static esp_err_t register_commands(void) {
       {.command = "unlock",
        .help = "Open the door now (manual override)",
        .func = command_unlock},
+      {.command = "approve",
+       .help = "Approve a face waiting for approval: approve <id>",
+       .hint = "<id>",
+       .func = command_approve},
+      {.command = "deny",
+       .help = "Deny a face waiting for approval: deny <id>",
+       .hint = "<id>",
+       .func = command_deny},
   };
   for (size_t i = 0; i < sizeof(commands) / sizeof(commands[0]); i++) {
     ESP_RETURN_ON_ERROR(esp_console_cmd_register(&commands[i]), TAG,

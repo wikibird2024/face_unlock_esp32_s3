@@ -27,6 +27,8 @@ typedef struct {
   uint16_t last_face_id;
   float last_similarity;
   float min_similarity;
+  /** Request waiting for approve/deny, 0 if none. */
+  uint32_t waiting_request_id;
 } system_logic_status_t;
 
 /** Start the recognition task. Camera, face model and door must be ready. */
@@ -36,6 +38,11 @@ esp_err_t system_logic_start(face_db_t *face_db);
 esp_err_t system_logic_request_enroll(const char *name);
 esp_err_t system_logic_request_cancel_enroll(void);
 esp_err_t system_logic_request_unlock(void);
+
+/** Answer the approval request `request_id` (see
+ * APP_EVENT_APPROVAL_REQUESTED). Answers to any other request are ignored. */
+esp_err_t system_logic_request_approve(uint32_t request_id);
+esp_err_t system_logic_request_deny(uint32_t request_id);
 
 esp_err_t system_logic_get_status(system_logic_status_t *out_status);
 

@@ -14,7 +14,8 @@ static uint8_t frames_needed(const unlock_state_machine_t *machine) {
 }
 
 static unlock_action_t make_action(unlock_action_type_t type) {
-  unlock_action_t action = {.type = type, .face_id = 0, .similarity = 0.0f};
+  unlock_action_t action = {
+      .type = type, .face_id = 0, .similarity = 0.0f, .request_id = 0};
   return action;
 }
 
@@ -25,6 +26,9 @@ static void enter_state(unlock_state_machine_t *machine, unlock_state_t state,
   machine->candidate_id = 0;
   machine->candidate_similarity = 0.0f;
   machine->matching_frame_count = 0;
+  machine->request_id = 0;
+  machine->approval_face_id = 0;
+  machine->approval_similarity = 0.0f;
 }
 
 static unlock_action_t open_door(unlock_state_machine_t *machine,
@@ -36,6 +40,52 @@ static unlock_action_t open_door(unlock_state_machine_t *machine,
   action.face_id = face_id;
   action.similarity = similarity;
   return action;
+}
+
+static unlock_action_t ask_approval(unlock_state_machine_t *machine,
+                                    uint16_t face_id, float similarity,
+                                    uint32_t now_ms) {
+  enter_state(machine, UNLOCK_STATE_WAITING_APPROVAL,
+              now_ms + machine->config.approval_timeout_ms);
+  machine->request_id = machine->next_request_id;
+  machine->approval_face_id = face_id;
+  machine->approval_similarity = similarity;
+  machine->next_request_id++;
+  if (machine->next_request_id == 0) {
+    machine->next_request_id = 1;
+  }
+  unlock_action_t action = make_action(UNLOCK_ACTION_ASK_APPROVAL);
+  action.face_id = face_id;
+  action.similarity = similarity;
+  action.request_id = machine->request_id;
+  return action;
+}
+
+/* Ends WAITING_APPROVAL without opening (deny or timeout). */
+static unlock_action_t end_approval(unlock_state_machine_t *machine,
+                                    unlock_action_type_t type,
+                                    uint32_t now_ms) {
+  unlock_action_t action = make_action(type);
+  action.face_id = machine->approval_face_id;
+  action.similarity = machine->approval_similarity;
+  action.request_id = machine->request_id;
+  enter_state(machine, UNLOCK_STATE_COOLDOWN,
+              now_ms + machine->config.cooldown_ms);
+  return action;
+}
+
+static unlock_action_t handle_answer(unlock_state_machine_t *machine,
+                                     const unlock_input_t *input,
+                                     uint32_t now_ms) {
+  if (machine->state != UNLOCK_STATE_WAITING_APPROVAL ||
+      input->request_id != machine->request_id) {
+    return make_action(UNLOCK_ACTION_NONE);
+  }
+  if (input->type == UNLOCK_INPUT_DENY) {
+    return end_approval(machine, UNLOCK_ACTION_APPROVAL_DENIED, now_ms);
+  }
+  return open_door(machine, machine->approval_face_id,
+                   machine->approval_similarity, now_ms);
 }
 
 static unlock_action_t handle_tick(unlock_state_machine_t *machine,
@@ -54,6 +104,8 @@ static unlock_action_t handle_tick(unlock_state_machine_t *machine,
   case UNLOCK_STATE_ENROLLING:
     enter_state(machine, UNLOCK_STATE_IDLE, now_ms);
     return make_action(UNLOCK_ACTION_ENROLL_TIMEOUT);
+  case UNLOCK_STATE_WAITING_APPROVAL:
+    return end_approval(machine, UNLOCK_ACTION_APPROVAL_TIMEOUT, now_ms);
   default:
     return make_action(UNLOCK_ACTION_NONE);
   }
@@ -93,6 +145,9 @@ static unlock_action_t handle_face(unlock_state_machine_t *machine,
   if (machine->matching_frame_count < frames_needed(machine)) {
     return make_action(UNLOCK_ACTION_NONE);
   }
+  if (is_known && machine->config.approval_timeout_ms > 0) {
+    return ask_approval(machine, candidate_id, input->similarity, now_ms);
+  }
   if (is_known) {
     return open_door(machine, candidate_id, input->similarity, now_ms);
   }
@@ -108,6 +163,8 @@ void unlock_sm_init(unlock_state_machine_t *machine,
                     const unlock_config_t *config) {
   machine->config = *config;
   enter_state(machine, UNLOCK_STATE_IDLE, 0);
+  machine->next_request_id =
+      config->first_request_id == 0 ? 1 : config->first_request_id;
 }
 
 unlock_action_t unlock_sm_handle(unlock_state_machine_t *machine,
@@ -134,7 +191,8 @@ unlock_action_t unlock_sm_handle(unlock_state_machine_t *machine,
     return open_door(machine, 0, 0.0f, now_ms);
 
   case UNLOCK_INPUT_START_ENROLL:
-    if (machine->state == UNLOCK_STATE_UNLOCKED) {
+    if (machine->state == UNLOCK_STATE_UNLOCKED ||
+        machine->state == UNLOCK_STATE_WAITING_APPROVAL) {
       return make_action(UNLOCK_ACTION_BUSY);
     }
     enter_state(machine, UNLOCK_STATE_ENROLLING,
@@ -147,12 +205,21 @@ unlock_action_t unlock_sm_handle(unlock_state_machine_t *machine,
     }
     enter_state(machine, UNLOCK_STATE_IDLE, now_ms);
     return make_action(UNLOCK_ACTION_ENROLL_CANCELLED);
+
+  case UNLOCK_INPUT_APPROVE:
+  case UNLOCK_INPUT_DENY:
+    return handle_answer(machine, input, now_ms);
   }
   return make_action(UNLOCK_ACTION_NONE);
 }
 
 unlock_state_t unlock_sm_state(const unlock_state_machine_t *machine) {
   return machine->state;
+}
+
+uint32_t unlock_sm_waiting_request_id(const unlock_state_machine_t *machine) {
+  return machine->state == UNLOCK_STATE_WAITING_APPROVAL ? machine->request_id
+                                                         : 0;
 }
 
 const char *unlock_state_name(unlock_state_t state) {
@@ -167,6 +234,8 @@ const char *unlock_state_name(unlock_state_t state) {
     return "cooldown";
   case UNLOCK_STATE_ENROLLING:
     return "enrolling";
+  case UNLOCK_STATE_WAITING_APPROVAL:
+    return "waiting approval";
   }
   return "unknown";
 }
@@ -191,6 +260,12 @@ const char *unlock_action_name(unlock_action_type_t action) {
     return "enroll cancelled";
   case UNLOCK_ACTION_BUSY:
     return "busy";
+  case UNLOCK_ACTION_ASK_APPROVAL:
+    return "ask approval";
+  case UNLOCK_ACTION_APPROVAL_DENIED:
+    return "approval denied";
+  case UNLOCK_ACTION_APPROVAL_TIMEOUT:
+    return "approval timeout";
   }
   return "unknown";
 }

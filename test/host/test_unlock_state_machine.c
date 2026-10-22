@@ -6,6 +6,8 @@
 #define HOLD_MS 3000u
 #define COOLDOWN_MS 2000u
 #define ENROLL_TIMEOUT_MS 10000u
+#define APPROVAL_TIMEOUT_MS 30000u
+#define FIRST_REQUEST_ID 7u
 
 static unlock_state_machine_t machine;
 static uint32_t now_ms;
@@ -37,6 +39,31 @@ static unlock_action_t face(uint16_t face_id, float similarity) {
 static unlock_action_t tick_after(uint32_t elapsed_ms) {
   now_ms += elapsed_ms;
   return send(UNLOCK_INPUT_TICK, 0, 0.0f);
+}
+
+static unlock_action_t answer(unlock_input_type_t type, uint32_t request_id) {
+  const unlock_input_t input = {.type = type, .request_id = request_id};
+  return unlock_sm_handle(&machine, &input, now_ms);
+}
+
+static void use_approval(void) {
+  const unlock_config_t config = {.min_similarity = MIN_SIMILARITY,
+                                  .confirm_frame_count = CONFIRM_FRAMES,
+                                  .unlock_hold_ms = HOLD_MS,
+                                  .cooldown_ms = COOLDOWN_MS,
+                                  .enroll_timeout_ms = ENROLL_TIMEOUT_MS,
+                                  .approval_timeout_ms = APPROVAL_TIMEOUT_MS,
+                                  .first_request_id = FIRST_REQUEST_ID};
+  unlock_sm_init(&machine, &config);
+}
+
+/* Shows known face 4 until it asks for approval; returns the request id. */
+static uint32_t ask_with_known_face(void) {
+  face(4, 0.9f);
+  face(4, 0.9f);
+  const unlock_action_t action = face(4, 0.9f);
+  TEST_ASSERT_EQUAL(UNLOCK_ACTION_ASK_APPROVAL, action.type);
+  return action.request_id;
 }
 
 static void unlock_with_known_face(void) {
@@ -221,6 +248,139 @@ static void test_enroll_allowed_during_cooldown(void) {
                     send(UNLOCK_INPUT_START_ENROLL, 0, 0.0f).type);
 }
 
+/* ---- Approval (second step, for example a phone) ------------------------ */
+
+static void test_known_face_asks_approval_instead_of_opening(void) {
+  use_approval();
+  face(4, 0.9f);
+  face(4, 0.9f);
+  const unlock_action_t action = face(4, 0.85f);
+  TEST_ASSERT_EQUAL(UNLOCK_ACTION_ASK_APPROVAL, action.type);
+  TEST_ASSERT_EQUAL_UINT16(4, action.face_id);
+  TEST_ASSERT_FLOAT_WITHIN(1e-6f, 0.85f, action.similarity);
+  TEST_ASSERT_EQUAL_UINT32(FIRST_REQUEST_ID, action.request_id);
+  TEST_ASSERT_EQUAL(UNLOCK_STATE_WAITING_APPROVAL, unlock_sm_state(&machine));
+  TEST_ASSERT_EQUAL_UINT32(FIRST_REQUEST_ID,
+                           unlock_sm_waiting_request_id(&machine));
+}
+
+static void test_approve_opens_for_the_waiting_face(void) {
+  use_approval();
+  const uint32_t request_id = ask_with_known_face();
+  const unlock_action_t action = answer(UNLOCK_INPUT_APPROVE, request_id);
+  TEST_ASSERT_EQUAL(UNLOCK_ACTION_OPEN_DOOR, action.type);
+  TEST_ASSERT_EQUAL_UINT16(4, action.face_id);
+  TEST_ASSERT_EQUAL(UNLOCK_STATE_UNLOCKED, unlock_sm_state(&machine));
+  TEST_ASSERT_EQUAL_UINT32(0, unlock_sm_waiting_request_id(&machine));
+  TEST_ASSERT_EQUAL(UNLOCK_ACTION_CLOSE_DOOR, tick_after(HOLD_MS).type);
+}
+
+static void test_answer_with_wrong_request_id_is_ignored(void) {
+  use_approval();
+  const uint32_t request_id = ask_with_known_face();
+  TEST_ASSERT_EQUAL(UNLOCK_ACTION_NONE,
+                    answer(UNLOCK_INPUT_APPROVE, request_id + 1).type);
+  TEST_ASSERT_EQUAL(UNLOCK_ACTION_NONE,
+                    answer(UNLOCK_INPUT_DENY, request_id - 1).type);
+  TEST_ASSERT_EQUAL(UNLOCK_STATE_WAITING_APPROVAL, unlock_sm_state(&machine));
+}
+
+static void test_answer_when_nothing_waits_is_ignored(void) {
+  use_approval();
+  TEST_ASSERT_EQUAL(UNLOCK_ACTION_NONE,
+                    answer(UNLOCK_INPUT_APPROVE, FIRST_REQUEST_ID).type);
+  TEST_ASSERT_EQUAL(UNLOCK_STATE_IDLE, unlock_sm_state(&machine));
+}
+
+static void test_deny_rejects_and_cools_down(void) {
+  use_approval();
+  const uint32_t request_id = ask_with_known_face();
+  const unlock_action_t action = answer(UNLOCK_INPUT_DENY, request_id);
+  TEST_ASSERT_EQUAL(UNLOCK_ACTION_APPROVAL_DENIED, action.type);
+  TEST_ASSERT_EQUAL_UINT16(4, action.face_id);
+  TEST_ASSERT_EQUAL_UINT32(request_id, action.request_id);
+  TEST_ASSERT_EQUAL(UNLOCK_STATE_COOLDOWN, unlock_sm_state(&machine));
+}
+
+static void test_approval_times_out(void) {
+  use_approval();
+  const uint32_t request_id = ask_with_known_face();
+  TEST_ASSERT_EQUAL(UNLOCK_ACTION_NONE,
+                    tick_after(APPROVAL_TIMEOUT_MS - 1).type);
+  const unlock_action_t action = tick_after(1);
+  TEST_ASSERT_EQUAL(UNLOCK_ACTION_APPROVAL_TIMEOUT, action.type);
+  TEST_ASSERT_EQUAL_UINT32(request_id, action.request_id);
+  TEST_ASSERT_EQUAL(UNLOCK_STATE_COOLDOWN, unlock_sm_state(&machine));
+}
+
+static void test_late_approve_after_timeout_does_not_open(void) {
+  use_approval();
+  const uint32_t request_id = ask_with_known_face();
+  tick_after(APPROVAL_TIMEOUT_MS);
+  TEST_ASSERT_EQUAL(UNLOCK_ACTION_NONE,
+                    answer(UNLOCK_INPUT_APPROVE, request_id).type);
+  TEST_ASSERT_EQUAL(UNLOCK_STATE_COOLDOWN, unlock_sm_state(&machine));
+}
+
+static void test_each_request_gets_a_new_id(void) {
+  use_approval();
+  const uint32_t first_id = ask_with_known_face();
+  answer(UNLOCK_INPUT_DENY, first_id);
+  tick_after(COOLDOWN_MS);
+  const uint32_t second_id = ask_with_known_face();
+  TEST_ASSERT_EQUAL_UINT32(first_id + 1, second_id);
+  /* The answer to the old request cannot open the new one. */
+  TEST_ASSERT_EQUAL(UNLOCK_ACTION_NONE,
+                    answer(UNLOCK_INPUT_APPROVE, first_id).type);
+}
+
+static void test_request_id_skips_zero_on_wrap(void) {
+  const unlock_config_t config = {.min_similarity = MIN_SIMILARITY,
+                                  .confirm_frame_count = CONFIRM_FRAMES,
+                                  .unlock_hold_ms = HOLD_MS,
+                                  .cooldown_ms = COOLDOWN_MS,
+                                  .enroll_timeout_ms = ENROLL_TIMEOUT_MS,
+                                  .approval_timeout_ms = APPROVAL_TIMEOUT_MS,
+                                  .first_request_id = UINT32_MAX};
+  unlock_sm_init(&machine, &config);
+  TEST_ASSERT_EQUAL_UINT32(UINT32_MAX, ask_with_known_face());
+  answer(UNLOCK_INPUT_DENY, UINT32_MAX);
+  tick_after(COOLDOWN_MS);
+  TEST_ASSERT_EQUAL_UINT32(1, ask_with_known_face());
+}
+
+static void test_faces_ignored_while_waiting_approval(void) {
+  use_approval();
+  ask_with_known_face();
+  TEST_ASSERT_EQUAL(UNLOCK_ACTION_NONE, face(5, 0.9f).type);
+  TEST_ASSERT_EQUAL(UNLOCK_ACTION_NONE, face(0, 0.1f).type);
+  send(UNLOCK_INPUT_NO_FACE, 0, 0.0f);
+  TEST_ASSERT_EQUAL(UNLOCK_STATE_WAITING_APPROVAL, unlock_sm_state(&machine));
+}
+
+static void test_unknown_face_rejected_without_asking(void) {
+  use_approval();
+  face(0, 0.1f);
+  face(0, 0.1f);
+  TEST_ASSERT_EQUAL(UNLOCK_ACTION_REJECT_FACE, face(0, 0.1f).type);
+}
+
+static void test_enroll_refused_while_waiting_approval(void) {
+  use_approval();
+  ask_with_known_face();
+  TEST_ASSERT_EQUAL(UNLOCK_ACTION_BUSY,
+                    send(UNLOCK_INPUT_START_ENROLL, 0, 0.0f).type);
+  TEST_ASSERT_EQUAL(UNLOCK_STATE_WAITING_APPROVAL, unlock_sm_state(&machine));
+}
+
+static void test_manual_unlock_ends_waiting(void) {
+  use_approval();
+  ask_with_known_face();
+  TEST_ASSERT_EQUAL(UNLOCK_ACTION_OPEN_DOOR,
+                    send(UNLOCK_INPUT_MANUAL_UNLOCK, 0, 0.0f).type);
+  TEST_ASSERT_EQUAL_UINT32(0, unlock_sm_waiting_request_id(&machine));
+}
+
 static void test_names_exist_for_all_values(void) {
   TEST_ASSERT_EQUAL_STRING("idle", unlock_state_name(UNLOCK_STATE_IDLE));
   TEST_ASSERT_EQUAL_STRING("enrolling",
@@ -228,6 +388,10 @@ static void test_names_exist_for_all_values(void) {
   TEST_ASSERT_EQUAL_STRING("open door",
                            unlock_action_name(UNLOCK_ACTION_OPEN_DOOR));
   TEST_ASSERT_EQUAL_STRING("busy", unlock_action_name(UNLOCK_ACTION_BUSY));
+  TEST_ASSERT_EQUAL_STRING("waiting approval",
+                           unlock_state_name(UNLOCK_STATE_WAITING_APPROVAL));
+  TEST_ASSERT_EQUAL_STRING("approval timeout",
+                           unlock_action_name(UNLOCK_ACTION_APPROVAL_TIMEOUT));
 }
 
 int main(void) {
@@ -252,6 +416,19 @@ int main(void) {
   RUN_TEST(test_enroll_cancel);
   RUN_TEST(test_enroll_refused_while_unlocked);
   RUN_TEST(test_enroll_allowed_during_cooldown);
+  RUN_TEST(test_known_face_asks_approval_instead_of_opening);
+  RUN_TEST(test_approve_opens_for_the_waiting_face);
+  RUN_TEST(test_answer_with_wrong_request_id_is_ignored);
+  RUN_TEST(test_answer_when_nothing_waits_is_ignored);
+  RUN_TEST(test_deny_rejects_and_cools_down);
+  RUN_TEST(test_approval_times_out);
+  RUN_TEST(test_late_approve_after_timeout_does_not_open);
+  RUN_TEST(test_each_request_gets_a_new_id);
+  RUN_TEST(test_request_id_skips_zero_on_wrap);
+  RUN_TEST(test_faces_ignored_while_waiting_approval);
+  RUN_TEST(test_unknown_face_rejected_without_asking);
+  RUN_TEST(test_enroll_refused_while_waiting_approval);
+  RUN_TEST(test_manual_unlock_ends_waiting);
   RUN_TEST(test_names_exist_for_all_values);
   return UNITY_END();
 }

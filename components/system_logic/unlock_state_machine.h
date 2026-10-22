@@ -8,9 +8,12 @@
  * control it.
  *
  *   IDLE ──face──▶ CONFIRMING ──N frames, known───▶ UNLOCKED ──hold──▶ COOLDOWN ──▶ IDLE
+ *                      │                              ▲
+ *                      │ known + approval on          │ approve (same request id)
+ *                      ├──────────▶ WAITING_APPROVAL ─┴─ deny / timeout ─▶ COOLDOWN
  *                      └─────── N frames, unknown ─▶ reject ─────────▶ COOLDOWN
- *   any but UNLOCKED ──start enroll──▶ ENROLLING ──N face frames──▶ enroll ─▶ COOLDOWN
- *                                          └────── timeout / cancel ─────▶ IDLE
+ *   IDLE, CONFIRMING, COOLDOWN ──start enroll──▶ ENROLLING ──N face frames──▶ enroll ─▶ COOLDOWN
+ *                                                    └──── timeout / cancel ────▶ IDLE
  */
 #pragma once
 
@@ -27,6 +30,8 @@ typedef enum {
   UNLOCK_STATE_UNLOCKED,
   UNLOCK_STATE_COOLDOWN,
   UNLOCK_STATE_ENROLLING,
+  /** A known face was seen; the door opens only on a matching approve. */
+  UNLOCK_STATE_WAITING_APPROVAL,
 } unlock_state_t;
 
 typedef struct {
@@ -38,6 +43,12 @@ typedef struct {
   /** Faces are ignored this long after an unlock, reject or enroll. */
   uint32_t cooldown_ms;
   uint32_t enroll_timeout_ms;
+  /** 0 = a known face opens at once. Otherwise the face only asks for
+   * approval (for example from a phone) and waits this long for it. */
+  uint32_t approval_timeout_ms;
+  /** Id of the first approval request (0 counts as 1). Pass a random number
+   * on the device so an answer from before a restart cannot match. */
+  uint32_t first_request_id;
 } unlock_config_t;
 
 typedef enum {
@@ -48,6 +59,9 @@ typedef enum {
   UNLOCK_INPUT_MANUAL_UNLOCK,
   UNLOCK_INPUT_START_ENROLL,
   UNLOCK_INPUT_CANCEL_ENROLL,
+  /** Answer to an approval request; see request_id. */
+  UNLOCK_INPUT_APPROVE,
+  UNLOCK_INPUT_DENY,
 } unlock_input_type_t;
 
 typedef struct {
@@ -55,6 +69,8 @@ typedef struct {
   /** Best matching enrolled face, or 0 when nobody is enrolled. */
   uint16_t face_id;
   float similarity;
+  /** APPROVE / DENY: the request being answered. Other ids are ignored. */
+  uint32_t request_id;
 } unlock_input_t;
 
 typedef enum {
@@ -69,13 +85,20 @@ typedef enum {
   UNLOCK_ACTION_ENROLL_CANCELLED,
   /** The request cannot be done now (for example enroll while unlocked). */
   UNLOCK_ACTION_BUSY,
+  /** A known face waits for approval; see face_id and request_id. */
+  UNLOCK_ACTION_ASK_APPROVAL,
+  UNLOCK_ACTION_APPROVAL_DENIED,
+  UNLOCK_ACTION_APPROVAL_TIMEOUT,
 } unlock_action_type_t;
 
 typedef struct {
   unlock_action_type_t type;
-  /** OPEN_DOOR by face: the face id (0 for a manual unlock). */
+  /** OPEN_DOOR by face: the face id (0 for a manual unlock). Approval
+   * actions: the face waiting for approval. */
   uint16_t face_id;
   float similarity;
+  /** Approval actions: the request id (0 otherwise). */
+  uint32_t request_id;
 } unlock_action_t;
 
 typedef struct {
@@ -85,8 +108,13 @@ typedef struct {
   uint16_t candidate_id;
   float candidate_similarity;
   uint8_t matching_frame_count;
-  /* End of the UNLOCKED, COOLDOWN or ENROLLING state. */
+  /* End of the UNLOCKED, COOLDOWN, ENROLLING or WAITING_APPROVAL state. */
   uint32_t state_end_ms;
+  /* WAITING_APPROVAL: the open request and the face it is for. */
+  uint32_t request_id;
+  uint16_t approval_face_id;
+  float approval_similarity;
+  uint32_t next_request_id;
 } unlock_state_machine_t;
 
 void unlock_sm_init(unlock_state_machine_t *machine,
@@ -96,6 +124,9 @@ unlock_action_t unlock_sm_handle(unlock_state_machine_t *machine,
                                  const unlock_input_t *input, uint32_t now_ms);
 
 unlock_state_t unlock_sm_state(const unlock_state_machine_t *machine);
+
+/** The request waiting for approval, or 0 when none is waiting. */
+uint32_t unlock_sm_waiting_request_id(const unlock_state_machine_t *machine);
 
 const char *unlock_state_name(unlock_state_t state);
 const char *unlock_action_name(unlock_action_type_t action);
