@@ -102,6 +102,19 @@ MJPEG view (one viewer at a time, `/jpg` for a snapshot). There is no
 login on the stream yet — anyone on the Wi-Fi can watch (see the
 hardening milestone). Face recognition keeps running while streaming.
 
+### Phone app (`mobile_app/`, Flutter)
+
+v1 shows the live view and saves the board address; the Approve and
+History tabs are placeholders for the MQTT phases. Without a board, a fake
+one on the PC serves the same `/stream` and `/jpg`:
+
+```bash
+cd mobile_app
+python3 tool/fake_board.py --port 8080    # address in the app: 127.0.0.1:8080
+flutter run -d linux                      # or plug in a phone: flutter run
+flutter analyze && flutter test
+```
+
 ### Two-step unlock (optional)
 
 Set menuconfig → *System logic* → *Wait for approval after a known face*
@@ -140,7 +153,7 @@ and builds the firmware and the on-device test app in the
 
 | Milestone | Content |
 |---|---|
-| Phone approval (phases, see `docs/mqtt_contract.md`) | A: MQTT in `net_comm` → B: Flutter app skeleton (`app/`) → C: pairing + HMAC-signed answers → D: push notifications |
+| Phone approval (phases, see `docs/mqtt_contract.md`) | A: MQTT in `net_comm` → B: Flutter app (`mobile_app/`, live view done) → C: pairing + HMAC-signed answers → D: push notifications |
 | Hardening | Login on the video stream, console `unlock` off in release, admin-only enroll, flash + NVS encryption |
 | Network + security | Wi-Fi provisioning, MQTT over TLS in `net_comm`, OTA (needs a two-slot partition table), NVS encryption for faces, secure boot |
 | Keypad | Matrix or single-button keypad: pick GPIOs in Kconfig clear of the camera/lock pins, scan + debounce, key/PIN API or events, PIN unlock with lockout |

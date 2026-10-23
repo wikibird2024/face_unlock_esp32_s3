@@ -49,6 +49,6 @@ storage → the ESP32 saves phone → face in NVS.
 | Phase | Content |
 |---|---|
 | A | Wi-Fi + MQTT in `net_comm`: publish request/event/status, accept answers (test from a PC with mosquitto) |
-| B | Flutter app skeleton (`app/`): connect, show request, Open/Deny |
+| B | Flutter app (`mobile_app/`, live view done): connect, show request, Open/Deny |
 | C | Pairing + HMAC check |
 | D | Push notification (app closed) via a small cloud function |

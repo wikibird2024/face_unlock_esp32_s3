@@ -25,6 +25,10 @@ idf.py -p /dev/ttyUSB0 flash monitor
 # On-device tests (NVS, GPIO, timer) - needs a board
 cd test/target && idf.py build flash monitor
 
+# Phone app (Flutter, SDK in /mnt/storage/HaoTran/sdk)
+cd mobile_app && flutter analyze && flutter test
+python3 mobile_app/tool/fake_board.py --port 8080   # board stand-in
+
 # Formatting (CI fails on a diff)
 git ls-files 'components/*.[ch]' 'components/*.cpp' 'main/*.c' 'test/host/*.c' \
   'test/target/main/*.c' | xargs clang-format -i
