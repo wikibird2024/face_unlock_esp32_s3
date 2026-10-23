@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:collection';
 import 'dart:typed_data';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -10,7 +11,13 @@ import '../../core/board/mjpeg_reader.dart';
 enum LiveStatus { stopped, noAddress, connecting, live, busy, offline }
 
 class LiveState {
-  const LiveState(this.status, {this.frame, this.message});
+  const LiveState(
+    this.status, {
+    this.frame,
+    this.message,
+    this.retryIn,
+    this.framesPerSecond = 0,
+  });
 
   final LiveStatus status;
 
@@ -18,12 +25,27 @@ class LiveState {
   /// still show (and snapshot) the last picture.
   final Uint8List? frame;
   final String? message;
+
+  /// Set while waiting to reconnect after busy/offline.
+  final Duration? retryIn;
+
+  /// Frames received in the last second.
+  final int framesPerSecond;
 }
 
 const connectTimeout = Duration(seconds: 5);
 
 /// Longer than this without a frame counts as offline.
 const frameTimeout = Duration(seconds: 5);
+
+const maxRetryDelay = Duration(seconds: 30);
+
+/// Wait before reconnect attempt [attempt] (0-based): 1, 2, 4, 8, 16, 30, 30… s.
+Duration retryDelay(int attempt) {
+  final seconds = 1 << attempt.clamp(0, 5);
+  final delay = Duration(seconds: seconds);
+  return delay > maxRetryDelay ? maxRetryDelay : delay;
+}
 
 /// Live view state. Disposed when the Live tab is left, which closes the
 /// stream: the board serves one viewer at a time.
@@ -35,6 +57,13 @@ class LiveNotifier extends Notifier<LiveState> {
   http.Client? _client;
   StreamSubscription<Uint8List>? _frameSubscription;
   Timer? _frameTimer;
+  Timer? _retryTimer;
+  int _failedAttempts = 0;
+  final _recentFrameTimes = Queue<DateTime>();
+
+  /// The user wants to watch: false after Stop, so coming back from the
+  /// background does not restart a stream the user stopped.
+  bool _wantsStream = false;
 
   @override
   LiveState build() {
@@ -42,7 +71,34 @@ class LiveNotifier extends Notifier<LiveState> {
     return const LiveState(LiveStatus.stopped);
   }
 
-  Future<void> start() async {
+  /// Start watching (Start button, opening the tab). Resets the retry wait.
+  Future<void> start() {
+    _wantsStream = true;
+    _failedAttempts = 0;
+    return _connect();
+  }
+
+  /// Stop button: stop and stay stopped.
+  void stop() {
+    _wantsStream = false;
+    _close();
+    state = LiveState(LiveStatus.stopped, frame: state.frame);
+  }
+
+  /// App went to the background: free the board's viewer slot, but come
+  /// back on [resume] if the user was watching.
+  void pause() {
+    _close();
+    if (_wantsStream) {
+      state = LiveState(LiveStatus.stopped, frame: state.frame);
+    }
+  }
+
+  void resume() {
+    if (_wantsStream) start();
+  }
+
+  Future<void> _connect() async {
     _close();
     final baseUri = boardBaseUri(ref.read(boardAddressProvider));
     if (baseUri == null) {
@@ -58,16 +114,14 @@ class LiveNotifier extends Notifier<LiveState> {
           .timeout(connectTimeout);
       if (_client != client) return; // stopped while connecting
       if (response.statusCode == 503) {
-        _close();
-        state = LiveState(
-          LiveStatus.busy,
-          frame: state.frame,
-          message: 'Someone else is watching',
-        );
+        _failAndRetry(LiveStatus.busy, 'Someone else is watching');
         return;
       }
       if (response.statusCode != 200) {
-        _fail('Board answered HTTP ${response.statusCode}');
+        _failAndRetry(
+          LiveStatus.offline,
+          'Board answered HTTP ${response.statusCode}',
+        );
         return;
       }
       final boundary =
@@ -76,26 +130,43 @@ class LiveNotifier extends Notifier<LiveState> {
       _frameSubscription = MjpegReader(boundary)
           .frames(response.stream)
           .listen(
-            (frame) {
-              state = LiveState(LiveStatus.live, frame: frame);
-              _restartFrameTimer();
-            },
-            onError: (Object error) => _fail('Stream error: $error'),
-            onDone: () => _fail('Board closed the stream'),
+            _onFrame,
+            onError: (Object error) =>
+                _failAndRetry(LiveStatus.offline, 'Stream error: $error'),
+            onDone: () =>
+                _failAndRetry(LiveStatus.offline, 'Board closed the stream'),
           );
       _restartFrameTimer();
     } on TimeoutException {
       // The board's HTTP server is one task: while another viewer streams,
       // it does not answer at all instead of sending 503.
-      if (_client == client) _fail('No answer (offline, or someone watching)');
+      if (_client == client) {
+        _failAndRetry(
+          LiveStatus.offline,
+          'No answer (offline, or someone watching)',
+        );
+      }
     } catch (error) {
-      if (_client == client) _fail('Cannot reach the board: $error');
+      if (_client == client) {
+        _failAndRetry(LiveStatus.offline, 'Cannot reach the board: $error');
+      }
     }
   }
 
-  void stop() {
-    _close();
-    state = LiveState(LiveStatus.stopped, frame: state.frame);
+  void _onFrame(Uint8List frame) {
+    _failedAttempts = 0;
+    final now = DateTime.now();
+    _recentFrameTimes.addLast(now);
+    while (now.difference(_recentFrameTimes.first) >
+        const Duration(seconds: 1)) {
+      _recentFrameTimes.removeFirst();
+    }
+    state = LiveState(
+      LiveStatus.live,
+      frame: frame,
+      framesPerSecond: _recentFrameTimes.length,
+    );
+    _restartFrameTimer();
   }
 
   /// While live, the board's single HTTP task is busy with the stream, so the
@@ -123,20 +194,35 @@ class LiveNotifier extends Notifier<LiveState> {
 
   void _restartFrameTimer() {
     _frameTimer?.cancel();
-    _frameTimer = Timer(frameTimeout, () => _fail('No frames for 5 s'));
+    _frameTimer = Timer(
+      frameTimeout,
+      () => _failAndRetry(LiveStatus.offline, 'No frames for 5 s'),
+    );
   }
 
-  void _fail(String message) {
+  /// Show the problem, then try again after a growing wait.
+  void _failAndRetry(LiveStatus status, String message) {
     _close();
-    state = LiveState(LiveStatus.offline, frame: state.frame, message: message);
+    final delay = retryDelay(_failedAttempts);
+    _failedAttempts++;
+    state = LiveState(
+      status,
+      frame: state.frame,
+      message: message,
+      retryIn: delay,
+    );
+    _retryTimer = Timer(delay, _connect);
   }
 
   void _close() {
+    _retryTimer?.cancel();
+    _retryTimer = null;
     _frameTimer?.cancel();
     _frameTimer = null;
     _frameSubscription?.cancel();
     _frameSubscription = null;
     _client?.close();
     _client = null;
+    _recentFrameTimes.clear();
   }
 }

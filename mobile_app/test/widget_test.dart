@@ -1,5 +1,6 @@
 import 'package:face_unlock/app/app.dart';
 import 'package:face_unlock/core/board/board_address.dart';
+import 'package:face_unlock/core/device/keep_screen_on.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -13,7 +14,10 @@ void main() {
     final preferences = await SharedPreferences.getInstance();
     await tester.pumpWidget(
       ProviderScope(
-        overrides: [sharedPreferencesProvider.overrideWithValue(preferences)],
+        overrides: [
+          sharedPreferencesProvider.overrideWithValue(preferences),
+          keepScreenOnProvider.overrideWithValue((_) async {}),
+        ],
         child: const FaceUnlockApp(),
       ),
     );

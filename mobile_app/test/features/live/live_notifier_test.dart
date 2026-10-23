@@ -3,6 +3,7 @@ import 'dart:convert';
 
 import 'package:face_unlock/core/board/board_address.dart';
 import 'package:face_unlock/features/live/live_notifier.dart';
+import 'package:fake_async/fake_async.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
@@ -89,7 +90,9 @@ void main() {
 
     await container.read(liveProvider.notifier).start();
 
-    expect(container.read(liveProvider).status, LiveStatus.busy);
+    final live = container.read(liveProvider);
+    expect(live.status, LiveStatus.busy);
+    expect(live.retryIn, const Duration(seconds: 1));
   });
 
   test('stream ending means offline', () async {
@@ -132,5 +135,101 @@ void main() {
       );
     });
     test('empty is null', () => expect(boardBaseUri('  '), isNull));
+  });
+
+  test('retry wait grows 1, 2, 4 … and stops at 30 s', () {
+    expect(
+      [for (var i = 0; i < 8; i++) retryDelay(i).inSeconds],
+      [1, 2, 4, 8, 16, 30, 30, 30],
+    );
+  });
+
+  group('auto-reconnect', () {
+    late int requestCount;
+
+    Future<http.StreamedResponse> endsAtOnce(
+      http.BaseRequest request,
+      http.ByteStream body,
+    ) async {
+      requestCount++;
+      return http.StreamedResponse(const Stream.empty(), 200);
+    }
+
+    setUp(() => requestCount = 0);
+
+    test('a dropped stream reconnects after 1 s, then 2 s', () {
+      fakeAsync((time) {
+        late ProviderContainer container;
+        _container(
+          address: '10.0.0.5',
+          board: endsAtOnce,
+        ).then((created) => container = created);
+        time.flushMicrotasks();
+
+        container.read(liveProvider.notifier).start();
+        time.flushMicrotasks();
+        expect(requestCount, 1);
+        expect(
+          container.read(liveProvider).retryIn,
+          const Duration(seconds: 1),
+        );
+
+        time.elapse(const Duration(seconds: 1));
+        expect(requestCount, 2);
+        expect(
+          container.read(liveProvider).retryIn,
+          const Duration(seconds: 2),
+        );
+
+        time.elapse(const Duration(seconds: 2));
+        expect(requestCount, 3);
+        container.dispose();
+      });
+    });
+
+    test('Stop cancels the retry, and resume keeps it stopped', () {
+      fakeAsync((time) {
+        late ProviderContainer container;
+        _container(
+          address: '10.0.0.5',
+          board: endsAtOnce,
+        ).then((created) => container = created);
+        time.flushMicrotasks();
+        final notifier = container.read(liveProvider.notifier);
+
+        notifier.start();
+        time.flushMicrotasks();
+        notifier.stop();
+        notifier.resume(); // app back in front after the user pressed Stop
+        time.elapse(const Duration(minutes: 1));
+
+        expect(requestCount, 1);
+        expect(container.read(liveProvider).status, LiveStatus.stopped);
+        container.dispose();
+      });
+    });
+
+    test('pause frees the board, resume reconnects', () {
+      fakeAsync((time) {
+        late ProviderContainer container;
+        _container(
+          address: '10.0.0.5',
+          board: endsAtOnce,
+        ).then((created) => container = created);
+        time.flushMicrotasks();
+        final notifier = container.read(liveProvider.notifier);
+
+        notifier.start();
+        time.flushMicrotasks();
+        notifier.pause();
+        time.elapse(const Duration(minutes: 1));
+        expect(requestCount, 1, reason: 'no retries in the background');
+
+        notifier.resume();
+        time.flushMicrotasks();
+        expect(requestCount, 2);
+        container.dispose();
+      });
+    });
   });
 }
