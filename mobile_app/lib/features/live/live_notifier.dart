@@ -8,7 +8,7 @@ import 'package:http/http.dart' as http;
 import '../../core/board/board_address.dart';
 import '../../core/board/mjpeg_reader.dart';
 
-enum LiveStatus { stopped, noAddress, connecting, live, busy, offline }
+enum LiveStatus { stopped, noAddress, connecting, live, offline }
 
 class LiveState {
   const LiveState(
@@ -26,7 +26,7 @@ class LiveState {
   final Uint8List? frame;
   final String? message;
 
-  /// Set while waiting to reconnect after busy/offline.
+  /// Set while waiting to reconnect after going offline.
   final Duration? retryIn;
 
   /// Frames received in the last second.
@@ -113,10 +113,6 @@ class LiveNotifier extends Notifier<LiveState> {
           .send(http.Request('GET', baseUri.replace(path: '/stream')))
           .timeout(connectTimeout);
       if (_client != client) return; // stopped while connecting
-      if (response.statusCode == 503) {
-        _failAndRetry(LiveStatus.busy, 'Someone else is watching');
-        return;
-      }
       if (response.statusCode != 200) {
         _failAndRetry(
           LiveStatus.offline,
@@ -139,7 +135,7 @@ class LiveNotifier extends Notifier<LiveState> {
       _restartFrameTimer();
     } on TimeoutException {
       // The board's HTTP server is one task: while another viewer streams,
-      // it does not answer at all instead of sending 503.
+      // it does not answer at all.
       if (_client == client) {
         _failAndRetry(
           LiveStatus.offline,

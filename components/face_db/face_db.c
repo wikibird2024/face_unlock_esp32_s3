@@ -194,8 +194,8 @@ face_db_status_t face_db_add_loaded_record(face_db_t *db,
       record->name == NULL || record->id == FACE_DB_NO_ID) {
     return FACE_DB_ERR_INVALID_ARG;
   }
-  /* A record from another model or a duplicate id is skipped, not fatal:
-   * one bad record must not lock everybody out. */
+  /* A record from another model, a duplicate id or one past a lowered
+   * capacity is skipped, not fatal: it must not lock everybody out. */
   if (record->embedding_len != db->embedding_len ||
       find_index(db, record->id) >= 0) {
     db->skipped_count++;
@@ -203,7 +203,7 @@ face_db_status_t face_db_add_loaded_record(face_db_t *db,
   }
   face_db_status_t status =
       insert_record(db, record->id, record->name, record->embedding);
-  if (status == FACE_DB_ERR_INVALID_ARG) {
+  if (status == FACE_DB_ERR_INVALID_ARG || status == FACE_DB_ERR_FULL) {
     db->skipped_count++;
     return FACE_DB_OK;
   }

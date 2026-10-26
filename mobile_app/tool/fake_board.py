@@ -5,7 +5,8 @@ video_stream component, so the app can be tested without hardware.
   /        small viewer page
   /stream  MJPEG, same part format and boundary as the firmware
   /jpg     one frame
-  503 on /stream while another viewer is watching (one viewer at a time)
+  One request at a time, like esp_http_server: while someone watches
+  /stream, other requests get no answer until that viewer leaves.
 
 Frames are the JPEG files in tool/fake_frames/, played in a loop.
 Standard library only.
@@ -15,9 +16,8 @@ Standard library only.
 
 import argparse
 import pathlib
-import threading
 import time
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from http.server import BaseHTTPRequestHandler, HTTPServer
 
 PART_BOUNDARY = "frameboundary"
 VIEWER_PAGE = (
@@ -27,7 +27,6 @@ VIEWER_PAGE = (
 
 frames = []
 frame_delay_s = 0.1
-stream_lock = threading.Lock()
 
 
 class BoardHandler(BaseHTTPRequestHandler):
@@ -50,9 +49,6 @@ class BoardHandler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def send_stream(self):
-        if not stream_lock.acquire(blocking=False):
-            self.send_body(503, "text/plain", b"Someone is already watching.")
-            return
         try:
             self.send_response(200)
             self.send_header(
@@ -73,9 +69,7 @@ class BoardHandler(BaseHTTPRequestHandler):
                 time.sleep(frame_delay_s)
         except (BrokenPipeError, ConnectionResetError):
             pass  # viewer closed the stream
-        finally:
-            stream_lock.release()
-            print("viewer gone")
+        print("viewer gone")
 
 
 def main():
@@ -97,7 +91,8 @@ def main():
         parser.error(f"no .jpg files in {args.frames}")
     frame_delay_s = 1.0 / args.fps
 
-    server = ThreadingHTTPServer(("0.0.0.0", args.port), BoardHandler)
+    # Not ThreadingHTTPServer: the board answers one request at a time.
+    server = HTTPServer(("0.0.0.0", args.port), BoardHandler)
     print(f"fake board on http://0.0.0.0:{args.port}/  ({len(frames)} frames)")
     server.serve_forever()
 

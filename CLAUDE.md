@@ -76,4 +76,6 @@ git ls-files 'components/*.[ch]' 'components/*.cpp' 'main/*.c' 'test/host/*.c' \
 - With Wi-Fi on, the app uses ~83% of the 4 MB `factory` partition. Grow it
   in `partitions.csv` (8 MB flash has room) before adding MQTT/TLS.
 - An empty Wi-Fi SSID lets the compiler drop all Wi-Fi/stream code, so a
-  default build does not prove it links; build once with a dummy SSID.
+  default build does not prove it links. CI also builds with a dummy SSID
+  (`build-wifi/`); do the same locally after touching `net_comm` or
+  `video_stream`.

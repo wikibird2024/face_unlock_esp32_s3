@@ -13,7 +13,7 @@ detection and recognition with Espressif's ESP-DL models (the same models
                         ai_face_recognition  (ESP-DL: detect face → 512-float embedding)
                                   │ embedding
                                   ▼
- console / BOOT button ─request─▶ system_logic task ◀──▶ face_db (cosine match, NVS "face_nvs")
+ console / button ──────request─▶ system_logic task ◀──▶ face_db (cosine match, NVS "face_nvs")
                                   │ unlock_state_machine decides
                                   ▼
                             door_control (GPIO, relocks itself by timer)
@@ -55,7 +55,7 @@ All numbers are in `idf.py menuconfig` → *System logic (unlock rules)*.
 | Module | ESP32-S3, ≥ 8 MB flash, **8 MB octal PSRAM** (N8R8 / N16R8) | `sdkconfig.defaults` |
 | Camera | OV5640, XCLK 15, SDA 4, SCL 5, D0–D7 11 9 8 10 12 18 17 16, VSYNC 6, HREF 7, PCLK 13 | menuconfig → *Camera driver* |
 | Lock output | GPIO 2, active high | menuconfig → *Door control* |
-| Enroll button | GPIO 0 (BOOT), active low | menuconfig → *System logic* |
+| Enroll button | off (-1); GPIO 0 is BOOT, active low | menuconfig → *System logic* |
 
 > Quad-PSRAM modules (N8R2, N4R2): set `CONFIG_SPIRAM_MODE_QUAD=y` in
 > `sdkconfig.defaults` and delete `sdkconfig`, or the board stops at boot
@@ -89,7 +89,9 @@ face> clear yes
 face> help
 ```
 
-Or hold the BOOT button to enroll the next face as `user_<n>`.
+Or, with an enroll button set in menuconfig, hold it to enroll the next
+face as `user_<n>`. The button has no other check, so only use one that
+is inside the house.
 Enrolling the same person 2–3 times (different light or angle) makes
 matching more reliable.
 
@@ -98,7 +100,9 @@ matching more reliable.
 Set menuconfig → *Network (net_comm)* → Wi-Fi name and password (they stay
 in `sdkconfig`, which git ignores). After boot, `status` shows the IP;
 open `http://<ip>/` in a browser or phone on the same Wi-Fi for a live
-MJPEG view (one viewer at a time, `/jpg` for a snapshot). There is no
+MJPEG view (`/jpg` for a snapshot). The HTTP server handles one request
+at a time, so while someone watches, other requests get no answer until
+that viewer leaves. There is no
 login on the stream yet — anyone on the Wi-Fi can watch (see the
 hardening milestone). Face recognition keeps running while streaming.
 

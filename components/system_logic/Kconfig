@@ -48,11 +48,12 @@ menu "System logic (unlock rules)"
     config SYSTEM_LOGIC_ENROLL_BUTTON_GPIO
         int "Enroll button GPIO (-1 = none)"
         range -1 48
-        default 0
+        default -1
         help
-            Active-low button with internal pull-up. GPIO 0 is the BOOT
-            button on most ESP32-S3 boards. A press enrolls the next face
-            as "user_<n>".
+            Active-low button with internal pull-up. A press enrolls the
+            next face as "user_<n>", with no other check, so anyone who can
+            press it can add their face. Only use a button inside the house.
+            GPIO 0 is the BOOT button on most ESP32-S3 boards.
 
     config SYSTEM_LOGIC_TASK_STACK_SIZE
         int "Recognition task stack size (bytes)"

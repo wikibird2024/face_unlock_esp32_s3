@@ -7,9 +7,8 @@
 #include "esp_check.h"
 #include "esp_log.h"
 #include "esp_netif.h"
+#include "esp_timer.h"
 #include "esp_wifi.h"
-#include "freertos/FreeRTOS.h"
-#include "freertos/task.h"
 
 static const char *TAG = "net_comm";
 
@@ -18,6 +17,8 @@ static const char *TAG = "net_comm";
 /* Set only from the default event loop task; read from other tasks. */
 static volatile bool s_is_connected;
 static char s_ip[NET_COMM_IP_MAX_LEN];
+/* Waits before a reconnect, so the event loop task never sleeps. */
+static esp_timer_handle_t s_reconnect_timer;
 
 static void on_app_event(void *handler_argument, esp_event_base_t base,
                          int32_t event_id, void *event_data) {
@@ -48,9 +49,9 @@ static void on_wifi_event(void *handler_argument, esp_event_base_t base,
     s_ip[0] = '\0';
     ESP_LOGW(TAG, "Wi-Fi lost, reconnecting in %d ms",
              CONFIG_NET_COMM_WIFI_RETRY_DELAY_MS);
-    /* This handler runs on the event loop task; a short block is fine. */
-    vTaskDelay(pdMS_TO_TICKS(CONFIG_NET_COMM_WIFI_RETRY_DELAY_MS));
-    esp_wifi_connect();
+    esp_timer_stop(s_reconnect_timer); /* not running: fine */
+    esp_timer_start_once(s_reconnect_timer,
+                         (uint64_t)CONFIG_NET_COMM_WIFI_RETRY_DELAY_MS * 1000);
     return;
   }
   if (base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP) {
@@ -61,7 +62,18 @@ static void on_wifi_event(void *handler_argument, esp_event_base_t base,
   }
 }
 
+static void reconnect_timer_callback(void *argument) {
+  (void)argument;
+  esp_wifi_connect();
+}
+
 static esp_err_t start_wifi(void) {
+  const esp_timer_create_args_t timer_args = {
+      .callback = reconnect_timer_callback,
+      .name = "wifi_reconnect",
+  };
+  ESP_RETURN_ON_ERROR(esp_timer_create(&timer_args, &s_reconnect_timer), TAG,
+                      "reconnect timer");
   ESP_RETURN_ON_ERROR(esp_netif_init(), TAG, "netif init");
   ESP_RETURN_ON_FALSE(esp_netif_create_default_wifi_sta() != NULL, ESP_FAIL,
                       TAG, "netif sta");

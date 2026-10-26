@@ -2,7 +2,6 @@
 
 #if CONFIG_VIDEO_STREAM_ENABLE
 
-#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -19,9 +18,6 @@ static const char *TAG = "video_stream";
 
 #define FRAME_DELAY_MS (1000 / CONFIG_VIDEO_STREAM_MAX_FPS)
 #define PART_BOUNDARY "frameboundary"
-
-/* Only one viewer at a time: a second stream would starve recognition. */
-static volatile bool s_stream_busy;
 
 static const char VIEWER_PAGE[] =
     "<!doctype html><html><head><meta charset=\"utf-8\">"
@@ -65,13 +61,10 @@ static esp_err_t handle_snapshot(httpd_req_t *request) {
   return err;
 }
 
+/* esp_http_server runs every handler in its one task, so while this loop
+ * runs no other request is answered: one viewer at a time, and the next
+ * one waits until this viewer leaves. */
 static esp_err_t handle_stream(httpd_req_t *request) {
-  if (s_stream_busy) {
-    /* esp_http_server has no 503 code of its own. */
-    httpd_resp_set_status(request, "503 Service Unavailable");
-    return httpd_resp_sendstr(request, "Someone is already watching.");
-  }
-  s_stream_busy = true;
   ESP_LOGI(TAG, "Viewer connected");
   httpd_resp_set_type(request,
                       "multipart/x-mixed-replace;boundary=" PART_BOUNDARY);
@@ -100,7 +93,6 @@ static esp_err_t handle_stream(httpd_req_t *request) {
   }
   /* err != ESP_OK usually means the viewer closed the page. */
   ESP_LOGI(TAG, "Viewer gone (%s)", esp_err_to_name(err));
-  s_stream_busy = false;
   return err;
 }
 

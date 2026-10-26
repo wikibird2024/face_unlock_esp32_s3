@@ -38,13 +38,15 @@ static esp_err_t start_recognition(face_db_t **out_face_db) {
 }
 
 void app_main(void) {
+  /* Lock output first: the door must be locked whatever fails later,
+   * including NVS. Needs only GPIO and esp_timer, both ready by now. */
+  ESP_ERROR_CHECK(door_control_init());
+
   const esp_app_desc_t *app = esp_app_get_description();
   ESP_LOGI(TAG, "Face unlock %s (IDF %s)", app->version, app->idf_ver);
 
   ESP_ERROR_CHECK(init_default_nvs());
   ESP_ERROR_CHECK(esp_event_loop_create_default());
-  /* Lock output first: the door must be locked whatever fails later. */
-  ESP_ERROR_CHECK(door_control_init());
   ESP_ERROR_CHECK(net_comm_init());
 
   face_db_t *face_db = NULL;

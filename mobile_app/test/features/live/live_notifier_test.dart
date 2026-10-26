@@ -80,18 +80,19 @@ void main() {
     expect(live.frame, _jpeg);
   });
 
-  test('503 means someone else is watching', () async {
+  test('an HTTP error means offline, with a retry', () async {
     final container = await _container(
       address: '10.0.0.5',
       board: (_, _) async =>
-          http.StreamedResponse(Stream.value(utf8.encode('busy')), 503),
+          http.StreamedResponse(Stream.value(utf8.encode('error')), 500),
     );
     addTearDown(container.dispose);
 
     await container.read(liveProvider.notifier).start();
 
     final live = container.read(liveProvider);
-    expect(live.status, LiveStatus.busy);
+    expect(live.status, LiveStatus.offline);
+    expect(live.message, 'Board answered HTTP 500');
     expect(live.retryIn, const Duration(seconds: 1));
   });
 

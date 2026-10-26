@@ -331,6 +331,26 @@ static void test_records_from_other_model_are_skipped(void) {
   TEST_ASSERT_EQUAL_size_t(1, face_db_skipped_count(db));
 }
 
+/* Limit lowered in menuconfig below the number of saved faces: the store
+ * must still open, with the extra faces skipped. */
+static void test_more_saved_faces_than_capacity_are_skipped(void) {
+  const size_t saved_count = TEST_MAX_FACES + 2;
+  for (size_t i = 0; i < saved_count; i++) {
+    fake_record_t *saved = &storage_state.records[i];
+    saved->is_used = true;
+    saved->id = (uint16_t)(i + 1);
+    strcpy(saved->name, "saved");
+    saved->embedding_len = TEST_EMBEDDING_LEN;
+    make_embedding(saved->embedding, i % TEST_EMBEDDING_LEN, 1.0f);
+  }
+
+  face_db_destroy(db);
+  db = create_db();
+
+  TEST_ASSERT_EQUAL_size_t(TEST_MAX_FACES, face_db_count(db));
+  TEST_ASSERT_EQUAL_size_t(2, face_db_skipped_count(db));
+}
+
 static void test_failed_save_leaves_store_unchanged(void) {
   float face[TEST_EMBEDDING_LEN];
   make_embedding(face, 0, 1.0f);
@@ -406,6 +426,7 @@ int main(void) {
   RUN_TEST(test_ids_are_not_reused_after_delete);
   RUN_TEST(test_faces_survive_restart);
   RUN_TEST(test_records_from_other_model_are_skipped);
+  RUN_TEST(test_more_saved_faces_than_capacity_are_skipped);
   RUN_TEST(test_failed_save_leaves_store_unchanged);
   RUN_TEST(test_failed_erase_keeps_face);
   RUN_TEST(test_clear_removes_everything);

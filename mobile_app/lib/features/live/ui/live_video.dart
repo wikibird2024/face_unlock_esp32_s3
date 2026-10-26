@@ -21,7 +21,7 @@ class LiveVideo extends StatelessWidget {
     final message = switch (live.status) {
       LiveStatus.connecting => 'Connecting…',
       LiveStatus.stopped => 'Stopped',
-      LiveStatus.busy || LiveStatus.offline =>
+      LiveStatus.offline =>
         retryIn == null
             ? live.message
             : '${live.message}\nRetrying in ${retryIn.inSeconds} s',
@@ -82,7 +82,7 @@ class _Badge extends StatelessWidget {
   }
 }
 
-/// 🟢 live, 🟡 connecting, 🔴 busy/offline, ⚪ stopped.
+/// 🟢 live, 🟡 connecting, 🔴 offline, ⚪ stopped.
 class StatusDot extends StatelessWidget {
   const StatusDot({super.key, required this.status});
 
@@ -93,7 +93,7 @@ class StatusDot extends StatelessWidget {
     final (color, label) = switch (status) {
       LiveStatus.live => (Colors.green, 'online'),
       LiveStatus.connecting => (Colors.amber, 'connecting'),
-      LiveStatus.busy || LiveStatus.offline => (Colors.red, 'offline'),
+      LiveStatus.offline => (Colors.red, 'offline'),
       LiveStatus.stopped || LiveStatus.noAddress => (Colors.grey, 'stopped'),
     };
     return Row(

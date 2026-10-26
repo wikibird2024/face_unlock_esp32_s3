@@ -89,8 +89,8 @@ typedef struct {
 /**
  * Create a face store and load the saved faces from storage.
  * Saved records whose embedding length differs from config->embedding_len
- * (for example after a model change) are skipped and counted; see
- * face_db_skipped_count().
+ * (for example after a model change), and records beyond max_faces, are
+ * skipped and counted; see face_db_skipped_count().
  */
 face_db_status_t face_db_create(const face_db_config_t *config,
                                 face_db_t **out_db);

@@ -40,6 +40,16 @@ jobs:
           . "$IDF_PATH/export.sh"
           idf.py build
           idf.py size
+      # An empty SSID lets the compiler drop all Wi-Fi and stream code, so
+      # build once with a dummy SSID to prove that code links and fits.
+      - name: Build app with Wi-Fi on
+        shell: bash
+        run: |
+          . "$IDF_PATH/export.sh"
+          echo 'CONFIG_NET_COMM_WIFI_SSID="ci"' > /tmp/wifi.defaults
+          idf.py -B build-wifi -D SDKCONFIG=build-wifi/sdkconfig \
+            -D "SDKCONFIG_DEFAULTS=sdkconfig.defaults;/tmp/wifi.defaults" \
+            build
       - name: Build on-device test app
         shell: bash
         run: |
@@ -56,3 +66,19 @@ jobs:
             build/partition_table/partition-table.bin
             build/flasher_args.json
             dependencies.lock
+
+  mobile-app:
+    name: Phone app (flutter analyze + test)
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: mobile_app
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 3.47.7
+          channel: stable
+      - run: flutter pub get
+      - run: flutter analyze
+      - run: flutter test
