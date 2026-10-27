@@ -1,0 +1,22 @@
+menu "Feedback (buzzer and RGB LED)"
+
+    config FEEDBACK_BUZZER_GPIO
+        int "Buzzer GPIO (-1 = none)"
+        range -1 48
+        default -1
+        help
+            Active buzzer (it beeps by itself when powered), on when the
+            GPIO is high. Drive it through a transistor if it needs more
+            than about 20 mA. GPIO 14 is free on the default pin map.
+
+    config FEEDBACK_RGB_LED_GPIO
+        int "RGB LED (WS2812) GPIO (-1 = none)"
+        range -1 48
+        default -1
+        help
+            Data pin of one addressable RGB LED (WS2812). The LED on the
+            ESP32-S3-DevKitC-1 is on GPIO 48 or 38, depending on the board
+            version: check the silkscreen. GPIO 21 is free on the default
+            pin map for an external one.
+
+endmenu

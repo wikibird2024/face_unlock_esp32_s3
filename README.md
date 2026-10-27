@@ -44,6 +44,7 @@ All numbers are in `idf.py menuconfig` → *System logic (unlock rules)*.
 | `door_control` | Lock GPIO with auto-relock timer | device |
 | `console_commands` | Serial commands for setup and debugging | manual |
 | `app_events` | Event ids and payloads shared by all components | — |
+| `feedback` | Beeps and an RGB LED (WS2812) from the events (listens only) | manual |
 | `net_comm` | Wi-Fi station (optional); listens to events, MQTT is the next milestone | — |
 | `video_stream` | Live camera view over HTTP (`/`, `/stream`, `/jpg`) | manual |
 | `keypad_input` | Stub, not started (next milestone) | — |
@@ -56,6 +57,7 @@ All numbers are in `idf.py menuconfig` → *System logic (unlock rules)*.
 | Camera | OV5640, XCLK 15, SDA 4, SCL 5, D0–D7 11 9 8 10 12 18 17 16, VSYNC 6, HREF 7, PCLK 13 | menuconfig → *Camera driver* |
 | Lock output | GPIO 2, active high | menuconfig → *Door control* |
 | Enroll button | off (-1); GPIO 0 is BOOT, active low | menuconfig → *System logic* |
+| Buzzer, RGB LED | off (-1); free: 14 (buzzer, active high), 21 or the DevKitC LED on 48/38 (WS2812) | menuconfig → *Feedback* |
 
 > Quad-PSRAM modules (N8R2, N4R2): set `CONFIG_SPIRAM_MODE_QUAD=y` in
 > `sdkconfig.defaults` and delete `sdkconfig`, or the board stops at boot

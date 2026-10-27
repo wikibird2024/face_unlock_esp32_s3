@@ -14,6 +14,9 @@ struct face_db {
   size_t embedding_len;
   size_t count;
   size_t skipped_count;
+  /* Highest id read from storage, skipped records included. New ids start
+   * above it, so an enroll never overwrites a skipped face's record. */
+  uint16_t highest_saved_id;
   bool has_storage;
   bool has_lock;
   face_db_storage_t storage;
@@ -83,7 +86,7 @@ static long find_index(const face_db_t *db, uint16_t id) {
 /* Next id: one above the highest in use, or the lowest free one after the
  * highest possible id has been used. */
 static uint16_t next_free_id(const face_db_t *db) {
-  uint16_t highest = FACE_DB_NO_ID;
+  uint16_t highest = db->highest_saved_id;
   for (size_t i = 0; i < db->count; i++) {
     if (db->slots[i].id > highest) {
       highest = db->slots[i].id;
@@ -193,6 +196,9 @@ face_db_status_t face_db_add_loaded_record(face_db_t *db,
   if (db == NULL || record == NULL || record->embedding == NULL ||
       record->name == NULL || record->id == FACE_DB_NO_ID) {
     return FACE_DB_ERR_INVALID_ARG;
+  }
+  if (record->id > db->highest_saved_id) {
+    db->highest_saved_id = record->id;
   }
   /* A record from another model, a duplicate id or one past a lowered
    * capacity is skipped, not fatal: it must not lock everybody out. */

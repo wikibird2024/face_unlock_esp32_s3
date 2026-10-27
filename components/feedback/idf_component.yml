@@ -1,0 +1,4 @@
+## WS2812 (addressable RGB LED) driver from Espressif's component registry.
+dependencies:
+  idf: ">=5.1"
+  espressif/led_strip: "^3.0.0"

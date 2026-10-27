@@ -7,6 +7,7 @@
 #include "esp_event.h"
 #include "esp_log.h"
 #include "face_db_nvs.h"
+#include "feedback.h"
 #include "net_comm.h"
 #include "nvs_flash.h"
 #include "system_logic.h"
@@ -48,6 +49,9 @@ void app_main(void) {
   ESP_ERROR_CHECK(init_default_nvs());
   ESP_ERROR_CHECK(esp_event_loop_create_default());
   ESP_ERROR_CHECK(net_comm_init());
+  if (feedback_start() != ESP_OK) {
+    ESP_LOGW(TAG, "No beep/LED feedback; everything else works");
+  }
 
   face_db_t *face_db = NULL;
   esp_err_t err = start_recognition(&face_db);

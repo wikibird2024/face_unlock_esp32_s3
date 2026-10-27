@@ -351,6 +351,41 @@ static void test_more_saved_faces_than_capacity_are_skipped(void) {
   TEST_ASSERT_EQUAL_size_t(2, face_db_skipped_count(db));
 }
 
+/* A new face must not take the id of a skipped face: the save would write
+ * over that face's record in storage. */
+static void test_new_face_keeps_skipped_faces_in_storage(void) {
+  const size_t saved_count = TEST_MAX_FACES + 2;
+  for (size_t i = 0; i < saved_count; i++) {
+    fake_record_t *saved = &storage_state.records[i];
+    saved->is_used = true;
+    saved->id = (uint16_t)(i + 1);
+    strcpy(saved->name, "saved");
+    saved->embedding_len = TEST_EMBEDDING_LEN;
+    make_embedding(saved->embedding, i % TEST_EMBEDDING_LEN, 1.0f);
+  }
+  face_db_destroy(db);
+  db = create_db();
+  face_db_entry_t first_loaded;
+  TEST_ASSERT_EQUAL(FACE_DB_OK, face_db_get_entry(db, 0, &first_loaded));
+  TEST_ASSERT_EQUAL(FACE_DB_OK, face_db_delete(db, first_loaded.id));
+
+  float face[TEST_EMBEDDING_LEN];
+  make_embedding(face, 0, 1.0f);
+  uint16_t new_id = 0;
+  TEST_ASSERT_EQUAL(
+      FACE_DB_OK, face_db_enroll(db, "new", face, TEST_EMBEDDING_LEN, &new_id));
+
+  TEST_ASSERT_EQUAL_UINT16(saved_count + 1, new_id);
+  size_t untouched_count = 0;
+  for (size_t i = 0; i < FAKE_STORAGE_SLOTS; i++) {
+    const fake_record_t *record = &storage_state.records[i];
+    if (record->is_used && strcmp(record->name, "saved") == 0) {
+      untouched_count++;
+    }
+  }
+  TEST_ASSERT_EQUAL_size_t(saved_count - 1, untouched_count);
+}
+
 static void test_failed_save_leaves_store_unchanged(void) {
   float face[TEST_EMBEDDING_LEN];
   make_embedding(face, 0, 1.0f);
@@ -427,6 +462,7 @@ int main(void) {
   RUN_TEST(test_faces_survive_restart);
   RUN_TEST(test_records_from_other_model_are_skipped);
   RUN_TEST(test_more_saved_faces_than_capacity_are_skipped);
+  RUN_TEST(test_new_face_keeps_skipped_faces_in_storage);
   RUN_TEST(test_failed_save_leaves_store_unchanged);
   RUN_TEST(test_failed_erase_keeps_face);
   RUN_TEST(test_clear_removes_everything);
